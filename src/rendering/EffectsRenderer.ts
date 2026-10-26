@@ -1,0 +1,292 @@
+import * as THREE from 'three';
+import { GRAPHICS_PRESETS } from '../config/constants';
+import type { BallEntityState, GraphicsQuality, Vector3Like } from '../types/game';
+import { clamp } from '../utils/math';
+
+interface SparkParticle {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  velocity: THREE.Vector3;
+  age: number;
+  lifetime: number;
+  active: boolean;
+}
+
+interface ShockwaveRing {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  age: number;
+  lifetime: number;
+  startScale: number;
+  endScale: number;
+  active: boolean;
+}
+
+export class EffectsRenderer {
+  public readonly group = new THREE.Group();
+
+  private sparks: SparkParticle[] = [];
+  private rings: ShockwaveRing[] = [];
+  private maxActiveSparks = 160;
+  private reducedEffects = false;
+  private boostTrailTimer = 0;
+
+  constructor() {
+    this.initPools();
+  }
+
+  private initPools(): void {
+    const sparkGeo = new THREE.OctahedronGeometry(0.18, 0);
+    for (let i = 0; i < 180; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(sparkGeo, mat);
+      mesh.visible = false;
+      this.group.add(mesh);
+      this.sparks.push({
+        mesh,
+        mat,
+        velocity: new THREE.Vector3(),
+        age: 0,
+        lifetime: 0.4,
+        active: false,
+      });
+    }
+
+    const ringGeo = new THREE.RingGeometry(0.65, 1.0, 32);
+    ringGeo.rotateX(-Math.PI * 0.5);
+    for (let i = 0; i < 36; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(ringGeo, mat);
+      mesh.visible = false;
+      this.group.add(mesh);
+      this.rings.push({
+        mesh,
+        mat,
+        age: 0,
+        lifetime: 0.45,
+        startScale: 0.5,
+        endScale: 3.5,
+        active: false,
+      });
+    }
+  }
+
+  public configure(quality: GraphicsQuality, reducedEffects: boolean): void {
+    this.maxActiveSparks = GRAPHICS_PRESETS[quality].maxParticles;
+    this.reducedEffects = reducedEffects;
+  }
+
+  private acquireSpark(): SparkParticle | null {
+    let activeCount = 0;
+    for (const s of this.sparks) {
+      if (s.active) activeCount++;
+    }
+    const cap = this.reducedEffects ? Math.min(35, this.maxActiveSparks) : this.maxActiveSparks;
+    if (activeCount >= cap) {
+      return null;
+    }
+    for (const s of this.sparks) {
+      if (!s.active) return s;
+    }
+    return null;
+  }
+
+  private acquireRing(): ShockwaveRing | null {
+    for (const r of this.rings) {
+      if (!r.active) return r;
+    }
+    return null;
+  }
+
+  public spawnCollisionEffect(
+    point: Vector3Like,
+    impulse: number,
+    isBoosted: boolean,
+    colorHex = '#FFD60A'
+  ): void {
+    const count = this.reducedEffects
+      ? 5
+      : Math.round(clamp(impulse * 0.75, 8, isBoosted ? 22 : 14));
+
+    const color = new THREE.Color(isBoosted ? '#00F0FF' : colorHex);
+
+    for (let i = 0; i < count; i++) {
+      const spark = this.acquireSpark();
+      if (!spark) break;
+
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+      const speed = 4.0 + Math.random() * (isBoosted ? 12.0 : 8.0);
+      const upSpeed = 2.5 + Math.random() * 6.0;
+
+      spark.active = true;
+      spark.age = 0;
+      spark.lifetime = 0.25 + Math.random() * 0.22;
+      spark.mesh.visible = true;
+      spark.mesh.position.set(point.x, Math.max(0.2, point.y), point.z);
+      spark.mesh.scale.setScalar(isBoosted ? 1.3 : 1.0);
+      spark.mat.color.copy(color);
+      spark.mat.opacity = 1.0;
+      spark.velocity.set(Math.cos(angle) * speed, upSpeed, Math.sin(angle) * speed);
+    }
+
+    const ring = this.acquireRing();
+    if (ring) {
+      ring.active = true;
+      ring.age = 0;
+      ring.lifetime = isBoosted ? 0.38 : 0.28;
+      ring.startScale = 0.6;
+      ring.endScale = isBoosted ? 4.2 : 2.8;
+      ring.mesh.visible = true;
+      ring.mesh.position.set(point.x, 0.06, point.z);
+      ring.mesh.scale.setScalar(ring.startScale);
+      ring.mat.color.copy(color);
+      ring.mat.opacity = 0.85;
+    }
+  }
+
+  public spawnBoostBurst(position: Vector3Like, colorHex: string): void {
+    const ring = this.acquireRing();
+    if (ring) {
+      ring.active = true;
+      ring.age = 0;
+      ring.lifetime = 0.34;
+      ring.startScale = 0.8;
+      ring.endScale = 3.2;
+      ring.mesh.visible = true;
+      ring.mesh.position.set(position.x, 0.05, position.z);
+      ring.mesh.scale.setScalar(ring.startScale);
+      ring.mat.color.set(colorHex);
+      ring.mat.opacity = 0.85;
+    }
+  }
+
+  public spawnKnockoutSplash(position: Vector3Like, colorHex: string): void {
+    const count = this.reducedEffects ? 6 : 18;
+    const color = new THREE.Color(colorHex);
+
+    for (let i = 0; i < count; i++) {
+      const spark = this.acquireSpark();
+      if (!spark) break;
+
+      const angle = (i / count) * Math.PI * 2;
+      const speed = 3.0 + Math.random() * 7.5;
+      const upSpeed = 6.0 + Math.random() * 9.0;
+
+      spark.active = true;
+      spark.age = 0;
+      spark.lifetime = 0.45 + Math.random() * 0.25;
+      spark.mesh.visible = true;
+      spark.mesh.position.set(position.x, Math.max(-1.0, position.y), position.z);
+      spark.mesh.scale.setScalar(1.45);
+      spark.mat.color.copy(color);
+      spark.mat.opacity = 1.0;
+      spark.velocity.set(Math.cos(angle) * speed, upSpeed, Math.sin(angle) * speed);
+    }
+
+    const ring = this.acquireRing();
+    if (ring) {
+      ring.active = true;
+      ring.age = 0;
+      ring.lifetime = 0.55;
+      ring.startScale = 1.0;
+      ring.endScale = 5.4;
+      ring.mesh.visible = true;
+      ring.mesh.position.set(position.x, 0.1, position.z);
+      ring.mesh.scale.setScalar(ring.startScale);
+      ring.mat.color.copy(color);
+      ring.mat.opacity = 0.95;
+    }
+  }
+
+  public spawnRespawnEffect(position: Vector3Like, colorHex: string): void {
+    const ring = this.acquireRing();
+    if (ring) {
+      ring.active = true;
+      ring.age = 0;
+      ring.lifetime = 0.45;
+      ring.startScale = 2.6;
+      ring.endScale = 0.8;
+      ring.mesh.visible = true;
+      ring.mesh.position.set(position.x, 0.08, position.z);
+      ring.mesh.scale.setScalar(ring.startScale);
+      ring.mat.color.set(colorHex);
+      ring.mat.opacity = 0.8;
+    }
+  }
+
+  public update(entities: ReadonlyArray<BallEntityState>, dt: number): void {
+    // Emit continuous trail sparks behind boosting balls
+    this.boostTrailTimer += dt;
+    const trailInterval = this.reducedEffects ? 0.06 : 0.025;
+    if (this.boostTrailTimer >= trailInterval) {
+      this.boostTrailTimer = 0;
+      for (const e of entities) {
+        if (!e.isAlive || e.boostActiveTimer <= 0) continue;
+        const spark = this.acquireSpark();
+        if (!spark) break;
+
+        spark.active = true;
+        spark.age = 0;
+        spark.lifetime = 0.24;
+        spark.mesh.visible = true;
+        spark.mesh.position.set(
+          e.position.x - e.boostDirection.x * e.radius * 0.8 + (Math.random() - 0.5) * 0.4,
+          0.35 + Math.random() * 0.35,
+          e.position.z - e.boostDirection.z * e.radius * 0.8 + (Math.random() - 0.5) * 0.4
+        );
+        spark.mesh.scale.setScalar(0.95);
+        spark.mat.color.set(e.colorPrimary);
+        spark.mat.opacity = 0.85;
+        spark.velocity.set(
+          -e.boostDirection.x * 2.5,
+          1.2 + Math.random() * 1.5,
+          -e.boostDirection.z * 2.5
+        );
+      }
+    }
+
+    // Update active sparks
+    for (const s of this.sparks) {
+      if (!s.active) continue;
+      s.age += dt;
+      if (s.age >= s.lifetime) {
+        s.active = false;
+        s.mesh.visible = false;
+        continue;
+      }
+      const progress = s.age / s.lifetime;
+      s.velocity.y -= 18.0 * dt;
+      s.mesh.position.addScaledVector(s.velocity, dt);
+      s.mesh.rotation.x += 8.0 * dt;
+      s.mesh.rotation.y += 8.0 * dt;
+      s.mat.opacity = 1.0 - progress;
+      s.mesh.scale.setScalar((1.0 - progress * 0.65) * 1.15);
+    }
+
+    // Update active shockwave rings
+    for (const r of this.rings) {
+      if (!r.active) continue;
+      r.age += dt;
+      if (r.age >= r.lifetime) {
+        r.active = false;
+        r.mesh.visible = false;
+        continue;
+      }
+      const progress = r.age / r.lifetime;
+      const scale = r.startScale + (r.endScale - r.startScale) * (1 - Math.pow(1 - progress, 2));
+      r.mesh.scale.setScalar(scale);
+      r.mat.opacity = (1.0 - progress) * 0.85;
+    }
+  }
+}

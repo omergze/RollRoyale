@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#060B18" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%2300F0FF' stroke='%23060B18' stroke-width='4'/%3E%3Cpath d='M10 32h44M32 10v44' stroke='%23060B18' stroke-width='6'/%3E%3Ccircle cx='32' cy='32' r='10' fill='%23FF2E93'/%3E%3C/svg%3E"
+    />
+    <title>RollRoyale — 3D Arcade Knockout Arena</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D WebGL Viewport Container -->
+      <div id="canvas-container" aria-label="RollRoyale 3D Arena"></div>
+
+      <!-- MAIN MENU SCREEN -->
+      <section id="menu-screen" class="screen active" aria-label="Main Menu">
+        <div class="menu-shell">
+          <header class="brand-header">
+            <div class="mode-pill">3D PHYSICS KNOCKOUT ARENA</div>
+            <h1 class="game-title">ROLL<span>ROYALE</span></h1>
+            <p class="game-subtitle">
+              Collide at high speed, master the boost, and knock rivals off the floating deck!
+            </p>
+          </header>
+
+          <div class="menu-card">
+            <div class="config-group">
+              <label class="config-label">AI DIFFICULTY</label>
+              <div class="segmented-control" role="radiogroup" aria-label="AI Difficulty">
+                <button
+                  type="button"
+                  id="diff-normal"
+                  class="segment-btn active"
+                  data-difficulty="normal"
+                >
+                  <span class="seg-title">NORMAL</span>
+                  <span class="seg-desc">Balanced pace &amp; forgiving angles</span>
+                </button>
+                <button
+                  type="button"
+                  id="diff-hard"
+                  class="segment-btn"
+                  data-difficulty="hard"
+                >
+                  <span class="seg-title">HARD</span>
+                  <span class="seg-desc">Smart flanking &amp; aggressive boosts</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="config-group">
+              <div class="config-label-row">
+                <label class="config-label">AI OPPONENTS</label>
+                <span id="bot-count-display" class="config-value">5 BOTS (6 PLAYERS)</span>
+              </div>
+              <div class="bot-count-selector" role="group" aria-label="Bot Count">
+                <button type="button" class="bot-count-btn" data-bots="3">3</button>
+                <button type="button" class="bot-count-btn" data-bots="4">4</button>
+                <button type="button" class="bot-count-btn active" data-bots="5">5</button>
+                <button type="button" class="bot-count-btn" data-bots="6">6</button>
+                <button type="button" class="bot-count-btn" data-bots="7">7</button>
+              </div>
+            </div>
+
+            <div class="menu-actions">
+              <button type="button" id="btn-play-solo" class="btn-primary">
+                <span>PLAY SOLO</span>
+                <span class="btn-sub">KNOCKOUT RUSH · 2:00</span>
+              </button>
+              <button type="button" id="btn-open-settings" class="btn-secondary">
+                SETTINGS
+              </button>
+            </div>
+
+            <div class="career-strip" aria-label="Personal Records">
+              <div class="career-stat">
+                <span class="career-label">PERSONAL BEST</span>
+                <span id="menu-best-score" class="career-val">0 KOs</span>
+              </div>
+              <div class="career-divider"></div>
+              <div class="career-stat">
+                <span class="career-label">TOTAL KNOCKOUTS</span>
+                <span id="menu-total-kos" class="career-val">0</span>
+              </div>
+              <div class="career-divider"></div>
+              <div class="career-stat">
+                <span class="career-label">SOLO VICTORIES</span>
+                <span id="menu-total-wins" class="career-val">0</span>
+              </div>
+            </div>
+          </div>
+
+          <footer class="controls-card" aria-label="Control Instructions">
+            <div class="control-col">
+              <span class="control-badge">DESKTOP</span>
+              <span><strong>WASD / Arrows</strong> Move</span>
+              <span><strong>SPACE</strong> Boost</span>
+              <span><strong>ESC</strong> Pause</span>
+            </div>
+            <div class="control-col">
+              <span class="control-badge accent">TOUCH / iPAD</span>
+              <span><strong>Left Thumbstick</strong> Steer</span>
+              <span><strong>Right Boost Button</strong> Burst</span>
+            </div>
+          </footer>
+        </div>
+      </section>
+
+      <!-- IN-GAME HUD -->
+      <section id="hud-screen" class="screen" aria-label="In-Game HUD">
+        <div class="hud-top-bar">
+          <!-- Left: Player Score & Placement -->
+          <div class="hud-player-panel">
+            <div class="hud-rank-badge" id="hud-player-rank">#1</div>
+            <div class="hud-stats-grid">
+              <div class="hud-stat-item">
+                <span class="hud-stat-label">SCORE</span>
+                <span class="hud-stat-value accent" id="hud-player-score">0</span>
+              </div>
+              <div class="hud-stat-item">
+                <span class="hud-stat-label">FALLS</span>
+                <span class="hud-stat-value" id="hud-player-falls">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Center: Match Timer & Shrink Warning -->
+          <div class="hud-center-panel">
+            <div class="hud-timer-box" id="hud-timer-box">
+              <span class="hud-mode-tag">KNOCKOUT RUSH</span>
+              <span class="hud-timer" id="hud-timer">02:00</span>
+            </div>
+            <div id="hud-shrink-banner" class="hud-shrink-banner hidden">
+              ⚠ FINAL 30s — ARENA SHRINKING!
+            </div>
+            <div id="hud-status-pill" class="hud-status-pill hidden"></div>
+          </div>
+
+          <!-- Right: Live Standings & Pause -->
+          <div class="hud-right-panel">
+            <div class="hud-leaderboard" id="hud-leaderboard" aria-label="Live Standings"></div>
+            <button
+              type="button"
+              id="btn-pause"
+              class="btn-hud-pause"
+              aria-label="Pause Game"
+              title="Pause (ESC)"
+            >
+              ❚❚
+            </button>
+          </div>
+        </div>
+
+        <!-- Knockout / Combat Event Feed -->
+        <div id="event-feed" class="event-feed" aria-live="polite"></div>
+
+        <!-- Desktop Boost Cooldown Bar -->
+        <div class="hud-bottom-bar">
+          <div class="boost-meter-card" id="hud-boost-card">
+            <div class="boost-meter-header">
+              <span class="boost-label">BOOST THRUSTER</span>
+              <span class="boost-status" id="hud-boost-status">READY [SPACE]</span>
+            </div>
+            <div class="boost-bar-track">
+              <div class="boost-bar-fill" id="hud-boost-fill" style="width: 100%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Touch / Mobile / Tablet Controls -->
+        <div id="touch-controls" class="touch-controls">
+          <div id="joystick-zone" class="joystick-zone" aria-label="Movement Joystick">
+            <div id="joystick-base" class="joystick-base">
+              <div id="joystick-knob" class="joystick-knob"></div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="btn-touch-boost"
+            class="btn-touch-boost ready"
+            aria-label="Activate Boost"
+          >
+            <span class="touch-boost-title">BOOST</span>
+            <span class="touch-boost-sub" id="touch-boost-sub">READY</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- PAUSE MODAL -->
+      <section id="pause-modal" class="modal-overlay hidden" aria-label="Pause Menu">
+        <div class="modal-card">
+          <h2 class="modal-title">MATCH PAUSED</h2>
+          <p class="modal-subtitle">Take a breather or adjust your arena setup.</p>
+          <div class="modal-actions">
+            <button type="button" id="btn-resume" class="btn-primary">RESUME MATCH</button>
+            <button type="button" id="btn-restart-pause" class="btn-secondary">
+              RESTART MATCH
+            </button>
+            <button type="button" id="btn-pause-settings" class="btn-secondary">
+              SETTINGS
+            </button>
+            <button type="button" id="btn-pause-menu" class="btn-ghost">
+              MAIN MENU
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS MODAL -->
+      <section id="settings-modal" class="modal-overlay hidden" aria-label="Game Settings">
+        <div class="modal-card settings-card">
+          <h2 class="modal-title">SETTINGS</h2>
+          <div class="settings-list">
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-name">Sound Effects</span>
+                <span class="setting-desc">Synthesized impact, boost, and knockout audio</span>
+              </div>
+              <button
+                type="button"
+                id="toggle-sound"
+                class="toggle-btn active"
+                aria-pressed="true"
+              >
+                ON
+              </button>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-name">Graphics Quality</span>
+                <span class="setting-desc">Adjusts pixel ratio, shadows, and particle cap</span>
+              </div>
+              <div class="quality-group" role="radiogroup" aria-label="Graphics Quality">
+                <button type="button" class="quality-btn" data-quality="low">LOW</button>
+                <button type="button" class="quality-btn" data-quality="medium">MED</button>
+                <button type="button" class="quality-btn active" data-quality="high">HIGH</button>
+              </div>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-name">Touch Stick Sensitivity</span>
+                <span class="setting-desc" id="sensitivity-label">1.0x Standard</span>
+              </div>
+              <input
+                type="range"
+                id="slider-sensitivity"
+                class="setting-slider"
+                min="0.6"
+                max="1.5"
+                step="0.1"
+                value="1.0"
+              />
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-name">Reduced Visual Effects</span>
+                <span class="setting-desc">Disables camera micro-shake and reduces sparks</span>
+              </div>
+              <button
+                type="button"
+                id="toggle-reduced-effects"
+                class="toggle-btn"
+                aria-pressed="false"
+              >
+                OFF
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" id="btn-close-settings" class="btn-primary">
+              SAVE &amp; CLOSE
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- MATCH RESULTS SCREEN -->
+      <section id="results-screen" class="screen" aria-label="Match Results">
+        <div class="results-card">
+          <div id="results-new-best" class="new-best-pill hidden">★ NEW PERSONAL BEST! ★</div>
+          <h2 id="results-headline" class="results-headline">1ST PLACE — VICTORY!</h2>
+          <p id="results-subheadline" class="results-subheadline">
+            You dominated the floating arena!
+          </p>
+
+          <div class="results-summary-grid">
+            <div class="res-stat-box">
+              <span class="res-stat-label">FINAL PLACEMENT</span>
+              <span id="res-placement" class="res-stat-val highlight">#1</span>
+            </div>
+            <div class="res-stat-box">
+              <span class="res-stat-label">KNOCKOUTS (SCORE)</span>
+              <span id="res-score" class="res-stat-val accent">0</span>
+            </div>
+            <div class="res-stat-box">
+              <span class="res-stat-label">FALLS</span>
+              <span id="res-falls" class="res-stat-val">0</span>
+            </div>
+            <div class="res-stat-box">
+              <span class="res-stat-label">PERSONAL BEST</span>
+              <span id="res-best" class="res-stat-val">0</span>
+            </div>
+          </div>
+
+          <div class="standings-table-wrap">
+            <table class="standings-table" aria-label="Final Match Standings">
+              <thead>
+                <tr>
+                  <th>RANK</th>
+                  <th>COMPETITOR</th>
+                  <th>SCORE</th>
+                  <th>FALLS</th>
+                  <th>STREAK</th>
+                </tr>
+              </thead>
+              <tbody id="results-table-body"></tbody>
+            </table>
+          </div>
+
+          <div class="results-actions">
+            <button type="button" id="btn-play-again" class="btn-primary">
+              PLAY AGAIN
+            </button>
+            <button type="button" id="btn-results-menu" class="btn-secondary">
+              MAIN MENU
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
