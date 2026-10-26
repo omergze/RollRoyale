@@ -1,3 +1,4 @@
+import type { ImpactTier } from '../types/game';
 import { clamp } from '../utils/math';
 
 export class SoundManager {
@@ -82,31 +83,73 @@ export class SoundManager {
     osc.stop(now + 0.27);
   }
 
-  public playCollision(relativeSpeed: number, isBoosted: boolean): void {
+  public playCollision(
+    relativeSpeed: number,
+    isBoosted: boolean,
+    impactTier: ImpactTier = isBoosted ? 'boost' : 'normal'
+  ): void {
     const ctx = this.getContext();
     if (!ctx) return;
 
     const now = ctx.currentTime;
-    const intensity = clamp(relativeSpeed / 22.0, 0.2, 1.0);
+    const intensity = clamp(relativeSpeed / 22.0, 0.18, 1.0);
 
-    // Punchy low impact oscillator
+    // 1. Primary low-end impact punch
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = isBoosted ? 'square' : 'sine';
-    const startFreq = 140 + intensity * 110;
-    osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(42, now + 0.14);
+    osc.type =
+      impactTier === 'perfect_boost' || impactTier === 'boost'
+        ? 'square'
+        : impactTier === 'heavy'
+          ? 'triangle'
+          : 'sine';
+    const startFreq =
+      impactTier === 'glancing' ? 110 : 145 + intensity * (isBoosted ? 135 : 95);
+    const endFreq = impactTier === 'perfect_boost' ? 36 : 44;
+    const duration =
+      impactTier === 'perfect_boost' ? 0.21 : isBoosted ? 0.17 : impactTier === 'glancing' ? 0.09 : 0.14;
 
-    const volume = clamp(intensity * (isBoosted ? 0.22 : 0.15), 0.04, 0.25);
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+
+    const tierVolMult =
+      impactTier === 'perfect_boost'
+        ? 0.26
+        : impactTier === 'boost'
+          ? 0.22
+          : impactTier === 'heavy'
+            ? 0.18
+            : impactTier === 'normal'
+              ? 0.14
+              : 0.06;
+    const volume = clamp(intensity * tierVolMult, 0.03, 0.27);
     gain.gain.setValueAtTime(volume, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.01);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.16);
+    osc.stop(now + duration + 0.02);
+
+    // 2. Crisp harmonic metallic transient on Perfect Impact
+    if (impactTier === 'perfect_boost') {
+      const chimeOsc = ctx.createOscillator();
+      const chimeGain = ctx.createGain();
+      chimeOsc.type = 'triangle';
+      chimeOsc.frequency.setValueAtTime(740, now);
+      chimeOsc.frequency.exponentialRampToValueAtTime(1180, now + 0.14);
+
+      chimeGain.gain.setValueAtTime(0.12, now);
+      chimeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      chimeOsc.connect(chimeGain);
+      chimeGain.connect(ctx.destination);
+
+      chimeOsc.start(now);
+      chimeOsc.stop(now + 0.19);
+    }
   }
 
   public playKnockout(isPlayerAttacker: boolean): void {

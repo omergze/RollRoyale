@@ -119,15 +119,18 @@ export class SceneManager {
 
     for (const ev of events) {
       if (ev.type === 'collision') {
-        const entityA = entityMap.get(ev.entityAId);
+        const attacker = ev.attackerId ? entityMap.get(ev.attackerId) : entityMap.get(ev.entityAId);
         this.effectsRenderer.spawnCollisionEffect(
           ev.point,
           ev.impulse,
           ev.isBoostedImpact,
-          entityA?.colorPrimary ?? '#FFD60A'
+          attacker?.colorPrimary ?? '#FFD60A',
+          ev.impactTier,
+          ev.knockbackDirection,
+          ev.isPerfectImpact
         );
         if (ev.entityAId === PLAYER_ENTITY_ID || ev.entityBId === PLAYER_ENTITY_ID) {
-          this.cameraController.addImpactShake(ev.impulse);
+          this.cameraController.addImpactShake(ev.impulse, ev.impactTier);
         }
       } else if (ev.type === 'boost') {
         const entity = entityMap.get(ev.entityId);

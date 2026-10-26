@@ -14,6 +14,7 @@ export interface QuaternionLike {
 export type BotDifficulty = 'normal' | 'hard';
 export type GraphicsQuality = 'low' | 'medium' | 'high';
 export type MatchPhase = 'menu' | 'playing' | 'paused' | 'results';
+export type ImpactTier = 'glancing' | 'normal' | 'heavy' | 'boost' | 'perfect_boost';
 
 export interface PlayerInputCommand {
   entityId: string;
@@ -29,6 +30,7 @@ export interface LastHitAttribution {
   timestamp: number;
   impactSpeed: number;
   impulseMagnitude: number;
+  impactTier?: ImpactTier;
 }
 
 export interface BallEntityState {
@@ -53,6 +55,7 @@ export interface BallEntityState {
   boostActiveTimer: number;
   boostCooldownTimer: number;
   boostDirection: Vector3Like;
+  knockbackTimer: number;
   lastHit: LastHitAttribution | null;
   score: number;
   knockouts: number;
@@ -94,11 +97,15 @@ export type GameEvent =
       timestamp: number;
       point: Vector3Like;
       normal: Vector3Like;
+      knockbackDirection: Vector3Like;
       entityAId: string;
       entityBId: string;
+      attackerId: string | null;
       relativeSpeed: number;
       impulse: number;
+      impactTier: ImpactTier;
       isBoostedImpact: boolean;
+      isPerfectImpact: boolean;
     }
   | {
       type: 'boost';
@@ -157,6 +164,7 @@ export interface MatchConfig {
   difficulty: BotDifficulty;
   matchDuration?: number;
   isDemoMode?: boolean;
+  seed?: number;
 }
 
 export interface GameSettings {

@@ -1,6 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BotController } from '../../src/ai/BotController';
-import { PHYSICS_CONSTANTS } from '../../src/config/constants';
+import {
+  ARENA_CONSTANTS,
+  BOOST_TUNING,
+  COMBAT_TUNING,
+  PHYSICS_CONSTANTS,
+} from '../../src/config/constants';
 import { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { ArenaSystem } from '../../src/simulation/ArenaSystem';
 import { CollisionSystem } from '../../src/simulation/CollisionSystem';
@@ -32,6 +37,7 @@ function createDummyBall(overrides: Partial<BallEntityState> = {}): BallEntitySt
     spawnProtectionTimer: 0,
     boostActiveTimer: 0,
     boostCooldownTimer: 0,
+    knockbackTimer: 0,
     boostDirection: vec3(0, 0, -1),
     lastHit: null,
     score: 0,
@@ -50,7 +56,7 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
     await PhysicsWorld.ensureInitialized();
   });
 
-  describe('1. Player Movement & Boost Rules', () => {
+  describe('1. Player Movement, Boost & Post-Hit Knockback Momentum', () => {
     it('accelerates smoothly in input direction and decelerates when input is released', () => {
       const ball = createDummyBall();
       const dt = 1 / 60;
@@ -67,11 +73,11 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       }
 
       const speedAfterAccel = lengthXZ(ball.velocity);
-      expect(speedAfterAccel).toBeGreaterThan(8.0);
+      expect(speedAfterAccel).toBeGreaterThan(8.5);
       expect(speedAfterAccel).toBeLessThanOrEqual(PHYSICS_CONSTANTS.MAX_MOVE_SPEED + 0.01);
 
       // Release input and verify controlled deceleration stops the ball without sliding forever
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 65; i++) {
         const res = MovementController.stepMovement(
           ball,
           { entityId: ball.id, moveX: 0, moveZ: 0, boostPressed: false },
@@ -112,6 +118,35 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       expect(ball.boostCooldownTimer).toBeCloseTo(PHYSICS_CONSTANTS.BOOST_COOLDOWN - dt, 3);
     });
 
+    it('preserves post-hit knockback momentum against instant reverse braking while allowing limited defensive steering (DI)', () => {
+      const dt = 1 / 60;
+
+      // Defender launched outward at +18 u/s along +X with active knockbackTimer
+      const defenderBraking = createDummyBall({
+        velocity: vec3(18, 0, 0),
+        knockbackTimer: 0.45,
+      });
+
+      // Defender holds full reverse input (-X) plus perpendicular DI (+Z) for 15 frames (0.25s)
+      let distanceTraveledX = 0;
+      for (let i = 0; i < 15; i++) {
+        const res = MovementController.stepMovement(
+          defenderBraking,
+          { entityId: defenderBraking.id, moveX: -1, moveZ: 1, boostPressed: false },
+          dt,
+          true
+        );
+        defenderBraking.velocity = res.newVelocity;
+        distanceTraveledX += defenderBraking.velocity.x * dt;
+      }
+
+      // Even while holding full reverse brake, the hit must still carry the ball > 3.0m outward
+      // and retain significant forward knockback speed after 0.25s, while allowing some lateral DI (+Z)
+      expect(distanceTraveledX).toBeGreaterThan(3.0);
+      expect(defenderBraking.velocity.x).toBeGreaterThan(8.5);
+      expect(defenderBraking.velocity.z).toBeGreaterThan(0.8);
+    });
+
     it('updates ball visual rolling rotation proportionally to ground displacement', () => {
       const ball = createDummyBall({
         prevPosition: vec3(0, 1, 0),
@@ -119,45 +154,103 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       });
       MovementController.updateRollingRotation(ball);
       expect(ball.rotation.w).toBeLessThan(1.0);
-      expect(Math.hypot(ball.rotation.x, ball.rotation.y, ball.rotation.z, ball.rotation.w)).toBeCloseTo(1.0, 5);
+      expect(
+        Math.hypot(ball.rotation.x, ball.rotation.y, ball.rotation.z, ball.rotation.w)
+      ).toBeCloseTo(1.0, 5);
     });
   });
 
-  describe('2. Collision, Knockback & Positional Advantage', () => {
-    it('delivers stronger knockback when attacker is moving fast or boosting', () => {
+  describe('2. Five-Tier Collision System, Perfect Impact & High-Speed Stability', () => {
+    it('clearly differentiates glancing, normal, heavy, boost, and perfect_boost collision tiers', () => {
       const collisionSystem = new CollisionSystem();
 
-      const slowAttacker = createDummyBall({
-        id: 'a1',
+      // 1. Glancing / low-speed touch
+      const glancingA = createDummyBall({
+        id: 'g-a',
         position: vec3(-1, 1, 0),
-        velocity: vec3(5, 0, 0),
+        velocity: vec3(1.5, 0, 0),
       });
-      const defender1 = createDummyBall({
-        id: 'b1',
+      const glancingB = createDummyBall({
+        id: 'g-b',
         position: vec3(1, 1, 0),
         velocity: vec3(0, 0, 0),
       });
-      const slowRes = collisionSystem.resolveBallCollision(slowAttacker, defender1, 1.0);
+      const glancingRes = collisionSystem.resolveBallCollision(glancingA, glancingB, 1.0);
 
-      const boostedAttacker = createDummyBall({
-        id: 'a2',
+      // 2. Normal moving collision
+      const normalA = createDummyBall({
+        id: 'n-a',
         position: vec3(-1, 1, 0),
-        velocity: vec3(20, 0, 0),
-        boostActiveTimer: 0.3,
+        velocity: vec3(8.5, 0, 0),
       });
-      const defender2 = createDummyBall({
-        id: 'b2',
+      const normalB = createDummyBall({
+        id: 'n-b',
         position: vec3(1, 1, 0),
         velocity: vec3(0, 0, 0),
       });
-      const fastRes = collisionSystem.resolveBallCollision(boostedAttacker, defender2, 1.0);
+      const normalRes = collisionSystem.resolveBallCollision(normalA, normalB, 2.0);
 
-      expect(slowRes.applied).toBe(true);
-      expect(fastRes.applied).toBe(true);
-      expect(fastRes.velocityB.x).toBeGreaterThan(slowRes.velocityB.x * 1.4);
+      // 3. Heavy high-speed unboosted charge
+      const heavyA = createDummyBall({
+        id: 'h-a',
+        position: vec3(-1, 1, 0),
+        velocity: vec3(13.2, 0, 0),
+      });
+      const heavyB = createDummyBall({
+        id: 'h-b',
+        position: vec3(1, 1, 0),
+        velocity: vec3(0, 0, 0),
+      });
+      const heavyRes = collisionSystem.resolveBallCollision(heavyA, heavyB, 3.0);
+
+      // 4. Standard Boost impact (late in boost window)
+      const boostA = createDummyBall({
+        id: 'b-a',
+        position: vec3(-1, 1, 0),
+        velocity: vec3(19.5, 0, 0),
+        boostActiveTimer: 0.08, // Outside Perfect Impact window, still boosting
+      });
+      const boostB = createDummyBall({
+        id: 'b-b',
+        position: vec3(1, 1, 0),
+        velocity: vec3(0, 0, 0),
+      });
+      const boostRes = collisionSystem.resolveBallCollision(boostA, boostB, 4.0);
+
+      // 5. Perfect Impact Boost (early surge window of boost)
+      const perfectA = createDummyBall({
+        id: 'p-a',
+        position: vec3(-1, 1, 0),
+        velocity: vec3(23.5, 0, 0),
+        boostActiveTimer:
+          BOOST_TUNING.BOOST_DURATION - BOOST_TUNING.PERFECT_IMPACT_WINDOW_SECONDS * 0.4,
+      });
+      const perfectB = createDummyBall({
+        id: 'p-b',
+        position: vec3(1, 1, 0),
+        velocity: vec3(0, 0, 0),
+      });
+      const perfectRes = collisionSystem.resolveBallCollision(perfectA, perfectB, 5.0);
+
+      expect(glancingRes.event?.impactTier).toBe('glancing');
+      expect(normalRes.event?.impactTier).toBe('normal');
+      expect(heavyRes.event?.impactTier).toBe('heavy');
+      expect(boostRes.event?.impactTier).toBe('boost');
+      expect(perfectRes.event?.impactTier).toBe('perfect_boost');
+      expect(perfectRes.event?.isPerfectImpact).toBe(true);
+
+      // Verify monotonic increase in defender knockback velocity across all 5 tiers
+      expect(normalRes.velocityB.x).toBeGreaterThan(glancingRes.velocityB.x * 2.2);
+      expect(heavyRes.velocityB.x).toBeGreaterThan(normalRes.velocityB.x * 1.25);
+      expect(boostRes.velocityB.x).toBeGreaterThan(heavyRes.velocityB.x * 1.2);
+      expect(perfectRes.velocityB.x).toBeGreaterThan(boostRes.velocityB.x * 1.12);
+
+      // Verify attacker retains forward follow-through momentum on a clean strike instead of bouncing backward
+      expect(normalRes.velocityA.x).toBeGreaterThan(1.5);
+      expect(perfectRes.velocityA.x).toBeGreaterThan(6.0);
     });
 
-    it('grants side and rear positional bonuses and prevents duplicate pair callbacks within cooldown', () => {
+    it('grants side and rear positional bonuses, prevents duplicate pair callbacks, and clamps extreme velocities safely', () => {
       const rearBonus = CollisionSystem.computeAngleMultiplier(vec3(1, 0, 0), vec3(8, 0, 0));
       const sideBonus = CollisionSystem.computeAngleMultiplier(vec3(1, 0, 0), vec3(0, 0, 8));
       const headOnBonus = CollisionSystem.computeAngleMultiplier(vec3(1, 0, 0), vec3(-8, 0, 0));
@@ -166,8 +259,18 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       expect(sideBonus).toBeGreaterThan(headOnBonus);
 
       const collisionSystem = new CollisionSystem();
-      const ballA = createDummyBall({ id: 'a', position: vec3(0, 1, 0), velocity: vec3(10, 0, 0) });
-      const ballB = createDummyBall({ id: 'b', position: vec3(2, 1, 0), velocity: vec3(0, 0, 0) });
+      const ballA = createDummyBall({
+        id: 'a',
+        position: vec3(0, 1, 0),
+        velocity: vec3(30, 0, 0),
+        boostActiveTimer: 0.4,
+      });
+      const ballB = createDummyBall({
+        id: 'b',
+        position: vec3(2, 1, 0),
+        velocity: vec3(-30, 0, 0),
+        boostActiveTimer: 0.4,
+      });
 
       const first = collisionSystem.resolveBallCollision(ballA, ballB, 2.0);
       const duplicateImmediate = collisionSystem.resolveBallCollision(ballA, ballB, 2.05);
@@ -176,6 +279,15 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       expect(first.applied).toBe(true);
       expect(duplicateImmediate.applied).toBe(false);
       expect(afterCooldown.applied).toBe(true);
+
+      // Resultant horizontal speeds must never exceed MAX_RESULTANT_HORIZONTAL_SPEED or produce NaN
+      expect(lengthXZ(first.velocityA)).toBeLessThanOrEqual(
+        COMBAT_TUNING.MAX_RESULTANT_HORIZONTAL_SPEED + 0.01
+      );
+      expect(lengthXZ(first.velocityB)).toBeLessThanOrEqual(
+        COMBAT_TUNING.MAX_RESULTANT_HORIZONTAL_SPEED + 0.01
+      );
+      expect(Number.isFinite(first.velocityB.x)).toBe(true);
     });
   });
 
@@ -251,12 +363,12 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
   });
 
   describe('4. Arena Boundaries & Final 30-Second Shrinking', () => {
-    it('shrinks smoothly during the final 30 seconds and selects safe interior respawn points', () => {
-      const arena = new ArenaSystem(22, 12.5);
+    it('shrinks smoothly from BASE_RADIUS (19.5) to MIN_RADIUS (11.0) during the final 30 seconds', () => {
+      const arena = new ArenaSystem();
 
       expect(arena.update(60)).toBe(false);
       expect(arena.getState().isShrinking).toBe(false);
-      expect(arena.getState().currentRadius).toBe(22);
+      expect(arena.getState().currentRadius).toBeCloseTo(ARENA_CONSTANTS.BASE_RADIUS, 3);
 
       // Crossing into 30s triggers shrink_start
       expect(arena.update(30)).toBe(true);
@@ -265,11 +377,14 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       // Halfway through final 30s (15s remaining)
       arena.update(15);
       expect(arena.getState().shrinkProgress).toBeCloseTo(0.5, 3);
-      expect(arena.getState().currentRadius).toBeCloseTo((22 + 12.5) / 2, 2);
+      expect(arena.getState().currentRadius).toBeCloseTo(
+        (ARENA_CONSTANTS.BASE_RADIUS + ARENA_CONSTANTS.MIN_RADIUS) / 2,
+        2
+      );
 
       // At 0s remaining, reaches minimum radius
       arena.update(0);
-      expect(arena.getState().currentRadius).toBeCloseTo(12.5, 3);
+      expect(arena.getState().currentRadius).toBeCloseTo(ARENA_CONSTANTS.MIN_RADIUS, 3);
 
       const opponent = createDummyBall({ position: vec3(4, 1, 0) });
       const respawnPos = arena.findSafeRespawnPosition([opponent], 1);
@@ -277,16 +392,16 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
     });
   });
 
-  describe('5. AI Bot Decision Rules (Normal & Hard)', () => {
+  describe('5. AI Bot Decision Rules, Anti-Clustering & Momentum Run-Ups', () => {
     it('steers back toward center and uses emergency boost when dangerously close to the arena edge', () => {
       const botController = new BotController();
-      const arena = new ArenaSystem(22, 12.5).getState();
+      const arena = new ArenaSystem().getState();
 
       const endangeredBot = createDummyBall({
         id: 'bot-1',
         isPlayer: false,
         difficulty: 'hard',
-        position: vec3(19.8, 1, 0), // Near +X edge (radius 22)
+        position: vec3(arena.currentRadius * 0.91, 1, 0), // Near +X edge
         velocity: vec3(9.0, 0, 0), // Moving outward toward edge
       });
       const centerTarget = createDummyBall({
@@ -308,18 +423,18 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
 
     it('Hard bot prioritizes vulnerable edge targets and triggers boost in strike range', () => {
       const botController = new BotController();
-      const arena = new ArenaSystem(22, 12.5).getState();
+      const arena = new ArenaSystem().getState();
 
       const hardBot = createDummyBall({
         id: 'bot-1',
         isPlayer: false,
         difficulty: 'hard',
-        position: vec3(10, 1, 0),
-        velocity: vec3(4, 0, 0),
+        position: vec3(9.5, 1, 0),
+        velocity: vec3(6.5, 0, 0),
       });
       const vulnerableTarget = createDummyBall({
         id: 'player-0',
-        position: vec3(15, 1, 0), // 5 units ahead toward the +X edge
+        position: vec3(14.5, 1, 0), // 5 units ahead toward the +X edge
         velocity: vec3(0, 0, 0),
       });
 
@@ -333,9 +448,50 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       expect(cmd.moveX).toBeGreaterThan(0.8);
       expect(cmd.boostPressed).toBe(true);
     });
+
+    it('distributes multiple bots across available targets instead of dogpiling a single target', () => {
+      const botController = new BotController();
+      const arena = new ArenaSystem().getState();
+
+      const targetA = createDummyBall({
+        id: 'target-a',
+        position: vec3(11, 1, 0),
+      });
+      const targetB = createDummyBall({
+        id: 'target-b',
+        position: vec3(-11, 1, 0),
+      });
+
+      const bots = [1, 2, 3, 4].map((idx) =>
+        createDummyBall({
+          id: `bot-${idx}`,
+          isPlayer: false,
+          difficulty: 'hard',
+          slotIndex: idx,
+          position: vec3((idx % 2 === 0 ? -1 : 1) * 4, 1, idx * 1.5 - 3),
+          velocity: vec3(5, 0, 0),
+        })
+      );
+
+      const allEntities = [targetA, targetB, ...bots];
+      for (const b of bots) {
+        botController.computeBotInput(b, allEntities, arena, 0.25);
+      }
+
+      // Verify that bots did not all lock onto the exact same target
+      const steersRight = bots.filter(
+        (b) => botController.computeBotInput(b, allEntities, arena, 1 / 60).moveX > 0
+      ).length;
+      const steersLeft = bots.filter(
+        (b) => botController.computeBotInput(b, allEntities, arena, 1 / 60).moveX < 0
+      ).length;
+
+      expect(steersRight).toBeGreaterThanOrEqual(1);
+      expect(steersLeft).toBeGreaterThanOrEqual(1);
+    });
   });
 
-  describe('6. Full Headless GameSimulation Integration (Respawns & Match Completion)', () => {
+  describe('6. Full Headless GameSimulation Integration & Multi-Seed Match Verification', () => {
     it('runs a full match lifecycle, respawns fallen balls, and ends cleanly at duration', () => {
       const sim = new GameSimulation();
       sim.startMatch({
@@ -361,7 +517,7 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       }
 
       const player = sim.getEntity(PLAYER_ENTITY_ID)!;
-      expect(player.position.z).toBeLessThan(8.0); // Moved inward from initial spawn
+      expect(player.position.z).toBeLessThan(7.5); // Moved inward from initial spawn
 
       // Advance remaining 4.1 seconds to complete the 5.0s match
       for (let i = 0; i < 250; i++) {
@@ -389,7 +545,7 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       const player = sim.getEntity(PLAYER_ENTITY_ID)!;
       const bot = sim.getEntity('bot-1')!;
 
-      // Simulate a recent hit by player on bot-1 right at the edge, then bot falling below threshold
+      // Simulate a recent hit by player on bot-1 right at the edge
       bot.lastHit = {
         attackerId: player.id,
         attackerName: player.name,
@@ -397,7 +553,6 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
         impactSpeed: 18,
         impulseMagnitude: 22,
       };
-      // Step once so elapsedTime > 0
       sim.stepFixed(1 / 60);
 
       // Force bot ring-out via ScoringSystem & verify GameSimulation respawn loop
@@ -412,17 +567,72 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       const koEvents = sim.drainEvents();
       expect(koEvents.some((e) => e.type === 'knockout' && e.attackerId === player.id)).toBe(true);
 
-      // Advance simulation past RESPAWN_DELAY_SECONDS (1.8s -> 115 steps)
-      for (let i = 0; i < 115; i++) {
+      // Advance simulation past RESPAWN_DELAY_SECONDS (1.45s -> 95 steps)
+      for (let i = 0; i < 95; i++) {
         sim.stepFixed(1 / 60);
       }
 
       expect(bot.isAlive).toBe(true);
-      expect(bot.spawnProtectionTimer).toBeGreaterThan(1.5);
+      expect(bot.spawnProtectionTimer).toBeGreaterThan(1.2);
       const respawnEvents = sim.drainEvents();
       expect(respawnEvents.some((e) => e.type === 'respawn' && e.entityId === bot.id)).toBe(true);
 
       sim.dispose();
+    });
+
+    it('produces genuine knockouts regularly across multi-seed 45s combat simulations without physics instability', () => {
+      const seeds = [101, 202, 303];
+      let totalKnockoutsAcrossSeeds = 0;
+      let totalRingOutsAcrossSeeds = 0;
+      let totalBoostedCollisions = 0;
+
+      for (const seed of seeds) {
+        const sim = new GameSimulation();
+        sim.startMatch({
+          botCount: 5,
+          difficulty: 'hard',
+          matchDuration: 45.0,
+          isDemoMode: true, // All 6 balls driven by AI so combat runs autonomously
+          seed,
+        });
+
+        const totalSteps = 45 * 60;
+        let seedKnockouts = 0;
+        let seedRingOuts = 0;
+
+        for (let step = 0; step < totalSteps; step++) {
+          sim.stepFixed(1 / 60);
+          const events = sim.drainEvents();
+          for (const ev of events) {
+            if (ev.type === 'knockout') {
+              seedKnockouts++;
+              seedRingOuts++;
+            } else if (ev.type === 'self_fall') {
+              seedRingOuts++;
+            } else if (ev.type === 'collision' && ev.isBoostedImpact) {
+              totalBoostedCollisions++;
+            }
+          }
+
+          // Verify no NaN or explosive velocities at any step
+          for (const ent of sim.getEntities()) {
+            expect(Number.isFinite(ent.position.x)).toBe(true);
+            expect(Number.isFinite(ent.position.z)).toBe(true);
+            expect(lengthXZ(ent.velocity)).toBeLessThanOrEqual(
+              COMBAT_TUNING.MAX_RESULTANT_HORIZONTAL_SPEED + 2.0
+            );
+          }
+        }
+
+        totalKnockoutsAcrossSeeds += seedKnockouts;
+        totalRingOutsAcrossSeeds += seedRingOuts;
+        sim.dispose();
+      }
+
+      // Across 3 seeds of 45s matches (6 balls each), genuine knockouts and boosted hits must occur regularly
+      expect(totalBoostedCollisions).toBeGreaterThanOrEqual(8);
+      expect(totalKnockoutsAcrossSeeds).toBeGreaterThanOrEqual(4);
+      expect(totalRingOutsAcrossSeeds).toBeGreaterThanOrEqual(6);
     });
   });
 });

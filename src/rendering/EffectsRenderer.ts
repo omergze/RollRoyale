@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GRAPHICS_PRESETS } from '../config/constants';
-import type { BallEntityState, GraphicsQuality, Vector3Like } from '../types/game';
+import type { BallEntityState, GraphicsQuality, ImpactTier, Vector3Like } from '../types/game';
 import { clamp } from '../utils/math';
 
 interface SparkParticle {
@@ -113,45 +113,110 @@ export class EffectsRenderer {
     point: Vector3Like,
     impulse: number,
     isBoosted: boolean,
-    colorHex = '#FFD60A'
+    colorHex = '#FFD60A',
+    impactTier: ImpactTier = isBoosted ? 'boost' : 'normal',
+    knockbackDirection: Vector3Like = { x: 0, y: 0, z: 0 },
+    isPerfectImpact = false
   ): void {
-    const count = this.reducedEffects
-      ? 5
-      : Math.round(clamp(impulse * 0.75, 8, isBoosted ? 22 : 14));
+    const tierSparkCounts: Record<ImpactTier, number> = {
+      glancing: 5,
+      normal: 11,
+      heavy: 16,
+      boost: 22,
+      perfect_boost: 28,
+    };
 
-    const color = new THREE.Color(isBoosted ? '#00F0FF' : colorHex);
+    const baseCount = tierSparkCounts[impactTier] ?? Math.round(clamp(impulse * 0.75, 6, 22));
+    const count = this.reducedEffects ? Math.min(6, baseCount) : baseCount;
+
+    const primaryColor = new THREE.Color(
+      isPerfectImpact ? '#FFD60A' : isBoosted ? '#00F0FF' : colorHex
+    );
+    const accentColor = new THREE.Color('#00F0FF');
+
+    const dirLen = Math.hypot(knockbackDirection.x, knockbackDirection.z);
+    const hasDir = dirLen > 0.05;
+    const baseAngle = hasDir ? Math.atan2(knockbackDirection.z, knockbackDirection.x) : 0;
 
     for (let i = 0; i < count; i++) {
       const spark = this.acquireSpark();
       if (!spark) break;
 
-      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
-      const speed = 4.0 + Math.random() * (isBoosted ? 12.0 : 8.0);
-      const upSpeed = 2.5 + Math.random() * 6.0;
+      // 70% of sparks spray in a directional knockback cone so impact force direction is unmistakable
+      const useCone = hasDir && i < count * 0.72;
+      const spread = isPerfectImpact ? 0.85 : 1.05;
+      const angle = useCone
+        ? baseAngle + (Math.random() - 0.5) * spread
+        : (i / count) * Math.PI * 2 + Math.random() * 0.4;
+
+      const tierSpeedMult =
+        impactTier === 'perfect_boost'
+          ? 15.5
+          : impactTier === 'boost'
+            ? 12.5
+            : impactTier === 'heavy'
+              ? 9.5
+              : impactTier === 'normal'
+                ? 7.2
+                : 4.0;
+      const speed = (useCone ? 5.5 : 3.2) + Math.random() * tierSpeedMult;
+      const upSpeed = 2.0 + Math.random() * (isPerfectImpact ? 7.2 : isBoosted ? 5.8 : 4.2);
 
       spark.active = true;
       spark.age = 0;
-      spark.lifetime = 0.25 + Math.random() * 0.22;
+      spark.lifetime = (isPerfectImpact ? 0.34 : 0.24) + Math.random() * 0.2;
       spark.mesh.visible = true;
       spark.mesh.position.set(point.x, Math.max(0.2, point.y), point.z);
-      spark.mesh.scale.setScalar(isBoosted ? 1.3 : 1.0);
-      spark.mat.color.copy(color);
+      spark.mesh.scale.setScalar(
+        isPerfectImpact ? 1.48 : isBoosted ? 1.28 : impactTier === 'heavy' ? 1.12 : 0.92
+      );
+      spark.mat.color.copy(isPerfectImpact && i % 2 === 1 ? accentColor : primaryColor);
       spark.mat.opacity = 1.0;
       spark.velocity.set(Math.cos(angle) * speed, upSpeed, Math.sin(angle) * speed);
+    }
+
+    if (impactTier === 'glancing' && this.reducedEffects) {
+      return;
     }
 
     const ring = this.acquireRing();
     if (ring) {
       ring.active = true;
       ring.age = 0;
-      ring.lifetime = isBoosted ? 0.38 : 0.28;
-      ring.startScale = 0.6;
-      ring.endScale = isBoosted ? 4.2 : 2.8;
+      ring.lifetime = isPerfectImpact ? 0.44 : isBoosted ? 0.36 : 0.25;
+      ring.startScale = 0.55;
+      ring.endScale =
+        impactTier === 'perfect_boost'
+          ? 5.2
+          : impactTier === 'boost'
+            ? 4.1
+            : impactTier === 'heavy'
+              ? 3.1
+              : impactTier === 'normal'
+                ? 2.3
+                : 1.4;
       ring.mesh.visible = true;
       ring.mesh.position.set(point.x, 0.06, point.z);
       ring.mesh.scale.setScalar(ring.startScale);
-      ring.mat.color.copy(color);
-      ring.mat.opacity = 0.85;
+      ring.mat.color.copy(primaryColor);
+      ring.mat.opacity = impactTier === 'glancing' ? 0.45 : 0.88;
+    }
+
+    // Secondary crisp cyan inner shockwave ring on Perfect Impact
+    if (isPerfectImpact && !this.reducedEffects) {
+      const innerRing = this.acquireRing();
+      if (innerRing) {
+        innerRing.active = true;
+        innerRing.age = 0;
+        innerRing.lifetime = 0.32;
+        innerRing.startScale = 0.35;
+        innerRing.endScale = 3.6;
+        innerRing.mesh.visible = true;
+        innerRing.mesh.position.set(point.x, 0.08, point.z);
+        innerRing.mesh.scale.setScalar(innerRing.startScale);
+        innerRing.mat.color.copy(accentColor);
+        innerRing.mat.opacity = 0.95;
+      }
     }
   }
 

@@ -410,7 +410,11 @@ export class UIManager {
 
   public handleGameEvents(events: ReadonlyArray<GameEvent>): void {
     for (const ev of events) {
-      if (ev.type === 'knockout') {
+      if (ev.type === 'collision') {
+        if (ev.isPerfectImpact && ev.attackerId === PLAYER_ENTITY_ID) {
+          this.pushToast('⚡ PERFECT IMPACT! Maximum Knockback!', false);
+        }
+      } else if (ev.type === 'knockout') {
         if (ev.attackerId === PLAYER_ENTITY_ID) {
           this.pushToast(`⚡ YOU knocked out ${ev.victimName}! (+1 SCORE)`, false);
         } else if (ev.victimId === PLAYER_ENTITY_ID) {

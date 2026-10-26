@@ -68,9 +68,10 @@ export class GameSimulation {
     this.pendingEvents = [];
     this.latchedBoostPress = false;
 
+    const seed = config.seed ?? 1337 + botCount * 97;
     this.arena.reset();
     this.collisionSystem.reset();
-    this.botController.reset(1337 + botCount * 97);
+    this.botController.reset(seed);
 
     // Clear old physics bodies
     for (const id of this.entities.keys()) {
@@ -112,6 +113,7 @@ export class GameSimulation {
         boostActiveTimer: 0,
         boostCooldownTimer: 0,
         boostDirection: vec3(0, 0, -1),
+        knockbackTimer: 0,
         lastHit: null,
         score: 0,
         knockouts: 0,
@@ -311,6 +313,7 @@ export class GameSimulation {
     entity.respawnTimer = ARENA_CONSTANTS.RESPAWN_DELAY_SECONDS;
     entity.boostActiveTimer = 0;
     entity.spawnProtectionTimer = 0;
+    entity.knockbackTimer = 0;
     entity.velocity = vec3(0, 0, 0);
 
     const event = ScoringSystem.processRingOut(entity, this.entities, this.elapsedTime);
@@ -321,11 +324,16 @@ export class GameSimulation {
   }
 
   private respawnEntity(entity: BallEntityState): void {
-    const safePos = this.arena.findSafeRespawnPosition(this.entityList, entity.slotIndex);
+    const safePos = this.arena.findSafeRespawnPosition(
+      this.entityList,
+      entity.slotIndex,
+      this.tick
+    );
     entity.isAlive = true;
     entity.respawnTimer = 0;
     entity.spawnProtectionTimer = ARENA_CONSTANTS.SPAWN_PROTECTION_SECONDS;
     entity.boostActiveTimer = 0;
+    entity.knockbackTimer = 0;
     entity.lastHit = null;
     entity.position = cloneVec3(safePos);
     entity.prevPosition = cloneVec3(safePos);

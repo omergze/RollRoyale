@@ -48,7 +48,8 @@ npm run test:e2e
 ## 3. Current Status & Recommended Next Tasks for Codex Cloud
 
 ### Current Status
-- Milestone 1 (Single-Player Knockout Rush, 3D Arena with Final-30s Shrink, Rolling Physics, Boost, Knockback & Attribution, Normal/Hard AI Bots, Desktop & iPad Touch Controls, Web Audio Synth, LocalStorage Stats, Unit & E2E Tests) is **complete and passing**.
+- **Milestone 1** (Single-Player Knockout Rush, 3D Arena with Final-30s Shrink, Rolling Physics, Boost, Knockback & Attribution, Normal/Hard AI Bots, Desktop & iPad Touch Controls, Web Audio Synth, LocalStorage Stats, Unit & E2E Tests) is **complete and passing**.
+- **Gameplay Feel, Knockback & AI Improvement Update** (5-Tier Collision System `glancing`/`normal`/`heavy`/`boost`/`perfect_boost`, `0.24s` Perfect Impact surge window, Post-Hit Knockback Momentum Preservation `knockbackTimer` with limited DI steering, Anti-Clustering AI with crowd penalties & momentum run-ups, Directional Impact Cones & Dual Shockwave Rings, Centralized Tuning Config in `src/config/constants.ts`, 15-test Vitest unit/multi-seed suite & Playwright E2E suite) is **complete and passing**.
 
 ### What to Build Next (Milestone 2 / Polish)
 1. **Solo Challenge Modes**:

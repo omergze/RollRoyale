@@ -83,7 +83,7 @@ npm run test:e2e
 | Input | Action |
 | :--- | :--- |
 | **W / A / S / D** or **Arrow Keys** | Roll & steer ball in 4/8 directions |
-| **Space** or **Shift** | Activate Boost burst (0.38s duration, 3.4s cooldown) |
+| **Space** or **Shift** | Activate Boost burst (`0.42s` duration, `3.0s` cooldown, `0.24s` **Perfect Impact** surge window) |
 | **Escape** or **P** | Pause / Resume match |
 
 ### iPad & Mobile Touchscreen Controls

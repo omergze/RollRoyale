@@ -141,7 +141,7 @@ class RollRoyaleApp {
 
     for (const ev of events) {
       if (ev.type === 'collision') {
-        this.soundManager.playCollision(ev.relativeSpeed, ev.isBoostedImpact);
+        this.soundManager.playCollision(ev.relativeSpeed, ev.isBoostedImpact, ev.impactTier);
       } else if (ev.type === 'boost') {
         this.soundManager.playBoost(ev.entityId === PLAYER_ENTITY_ID);
       } else if (ev.type === 'knockout') {

@@ -65,8 +65,8 @@ export class ArenaSystem {
     // Also detect when ball has fallen below the platform deck outside the active radius
     const radialDist = lengthXZ(position);
     if (
-      position.y < -0.6 &&
-      radialDist > this.state.currentRadius + ARENA_CONSTANTS.OUTER_RING_OUT_MARGIN * 0.5
+      position.y < -0.55 &&
+      radialDist > this.state.currentRadius + ARENA_CONSTANTS.OUTER_RING_OUT_MARGIN * 0.45
     ) {
       return true;
     }
@@ -78,7 +78,7 @@ export class ArenaSystem {
    */
   public isPastPlatformEdge(position: Vector3Like): boolean {
     const radialDist = lengthXZ(position);
-    return radialDist > this.state.currentRadius + PHYSICS_CONSTANTS.BALL_RADIUS * 0.28;
+    return radialDist > this.state.currentRadius + PHYSICS_CONSTANTS.BALL_RADIUS * 0.25;
   }
 
   /**
@@ -94,7 +94,7 @@ export class ArenaSystem {
    */
   public getInitialSpawnPositions(totalCount: number): Vector3Like[] {
     const positions: Vector3Like[] = [];
-    const ringRadius = Math.min(this.state.currentRadius * 0.56, 12.5);
+    const ringRadius = Math.min(this.state.currentRadius * 0.54, 10.8);
     const y = PHYSICS_CONSTANTS.BALL_RADIUS + 0.08;
 
     for (let i = 0; i < totalCount; i++) {
@@ -111,22 +111,24 @@ export class ArenaSystem {
 
   /**
    * Finds a safe respawn location well inside the current shrinking safe radius,
-   * maximizing distance from currently alive opponents.
+   * maximizing distance from currently alive opponents and avoiding clustering.
    */
   public findSafeRespawnPosition(
     activeEntities: ReadonlyArray<BallEntityState>,
-    slotIndex: number
+    slotIndex: number,
+    tickOffset = 0
   ): Vector3Like {
-    const safeMaxRadius = Math.max(2.5, this.state.currentRadius * 0.52);
-    const y = PHYSICS_CONSTANTS.BALL_RADIUS + 0.35;
+    const safeMaxRadius = Math.max(2.5, this.state.currentRadius * 0.5);
+    const y = PHYSICS_CONSTANTS.BALL_RADIUS + 0.3;
 
     const candidates: Vector3Like[] = [];
-    const angleSteps = 12;
-    const radiusRings = [safeMaxRadius * 0.42, safeMaxRadius * 0.78];
+    const angleSteps = 16;
+    const radiusRings = [safeMaxRadius * 0.38, safeMaxRadius * 0.74];
+    const phaseShift = (slotIndex * 1.618 + tickOffset * 0.17) % 1;
 
     for (const r of radiusRings) {
       for (let i = 0; i < angleSteps; i++) {
-        const angle = ((i + slotIndex * 1.37) / angleSteps) * Math.PI * 2;
+        const angle = ((i + phaseShift) / angleSteps) * Math.PI * 2;
         candidates.push({
           x: Math.cos(angle) * r,
           y,
@@ -134,7 +136,6 @@ export class ArenaSystem {
         });
       }
     }
-    // Also include near-center fallback
     candidates.push({ x: 0, y, z: 0 });
 
     const alive = activeEntities.filter((e) => e.isAlive);
@@ -147,15 +148,18 @@ export class ArenaSystem {
 
     for (const candidate of candidates) {
       let minDistToOpponent = Infinity;
+      let nearbyCount = 0;
       for (const other of alive) {
         const d = distanceXZ(candidate, other.position);
         if (d < minDistToOpponent) {
           minDistToOpponent = d;
         }
+        if (d < 5.5) {
+          nearbyCount += 1;
+        }
       }
-      // Slightly prefer positions closer to inner-mid ring rather than edge
-      const centerDistPenalty = lengthXZ(candidate) * 0.08;
-      const candidateScore = minDistToOpponent - centerDistPenalty;
+      const centerDistPenalty = lengthXZ(candidate) * 0.06;
+      const candidateScore = minDistToOpponent - nearbyCount * 2.5 - centerDistPenalty;
       if (candidateScore > bestScore) {
         bestScore = candidateScore;
         bestCandidate = candidate;
