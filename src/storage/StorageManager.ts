@@ -1,9 +1,24 @@
 import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../config/constants';
-import type { BotDifficulty, GameSettings, GraphicsQuality, PlayerStats } from '../types/game';
+import type {
+  ArenaId,
+  BotDifficulty,
+  GameSettings,
+  GraphicsQuality,
+  MapSelectionId,
+  PlayerStats,
+} from '../types/game';
 import { clamp } from '../utils/math';
 
 const SETTINGS_KEY = 'rollroyale_settings_v1';
 const STATS_KEY = 'rollroyale_stats_v1';
+
+const VALID_MAP_SELECTIONS: ReadonlyArray<MapSelectionId> = [
+  'classic',
+  'crater',
+  'donut',
+  'bumper',
+  'random',
+];
 
 export class StorageManager {
   public static loadSettings(): GameSettings {
@@ -25,6 +40,11 @@ export class StorageManager {
           ? parsed.difficulty
           : DEFAULT_SETTINGS.difficulty;
 
+      const validArena: MapSelectionId =
+        parsed.selectedArena && VALID_MAP_SELECTIONS.includes(parsed.selectedArena)
+          ? parsed.selectedArena
+          : DEFAULT_SETTINGS.selectedArena;
+
       return {
         soundEnabled:
           typeof parsed.soundEnabled === 'boolean'
@@ -44,6 +64,7 @@ export class StorageManager {
           typeof parsed.botCount === 'number'
             ? Math.round(clamp(parsed.botCount, 3, 7))
             : DEFAULT_SETTINGS.botCount,
+        selectedArena: validArena,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -62,9 +83,13 @@ export class StorageManager {
     try {
       const raw = localStorage.getItem(STATS_KEY);
       if (!raw) {
-        return { ...DEFAULT_STATS };
+        return {
+          ...DEFAULT_STATS,
+          arenaBestScores: { ...DEFAULT_STATS.arenaBestScores },
+        };
       }
       const parsed = JSON.parse(raw) as Partial<PlayerStats>;
+      const rawArenaBest: Partial<Record<ArenaId, number>> = parsed.arenaBestScores ?? {};
       return {
         bestScore: typeof parsed.bestScore === 'number' ? Math.max(0, parsed.bestScore) : 0,
         bestKnockouts:
@@ -76,9 +101,19 @@ export class StorageManager {
         totalWins: typeof parsed.totalWins === 'number' ? Math.max(0, parsed.totalWins) : 0,
         normalWins: typeof parsed.normalWins === 'number' ? Math.max(0, parsed.normalWins) : 0,
         hardWins: typeof parsed.hardWins === 'number' ? Math.max(0, parsed.hardWins) : 0,
+        arenaBestScores: {
+          classic:
+            typeof rawArenaBest.classic === 'number' ? Math.max(0, rawArenaBest.classic) : 0,
+          crater: typeof rawArenaBest.crater === 'number' ? Math.max(0, rawArenaBest.crater) : 0,
+          donut: typeof rawArenaBest.donut === 'number' ? Math.max(0, rawArenaBest.donut) : 0,
+          bumper: typeof rawArenaBest.bumper === 'number' ? Math.max(0, rawArenaBest.bumper) : 0,
+        },
       };
     } catch {
-      return { ...DEFAULT_STATS };
+      return {
+        ...DEFAULT_STATS,
+        arenaBestScores: { ...DEFAULT_STATS.arenaBestScores },
+      };
     }
   }
 
@@ -86,10 +121,12 @@ export class StorageManager {
     score: number,
     knockouts: number,
     wonMatch: boolean,
-    difficulty: BotDifficulty
+    difficulty: BotDifficulty,
+    arenaId: ArenaId = 'classic'
   ): { stats: PlayerStats; isNewBestScore: boolean } {
     const current = StorageManager.loadStats();
-    const isNewBestScore = score > current.bestScore;
+    const prevArenaBest = current.arenaBestScores[arenaId] ?? 0;
+    const isNewBestScore = score > current.bestScore || score > prevArenaBest;
 
     const updated: PlayerStats = {
       bestScore: Math.max(current.bestScore, score),
@@ -99,6 +136,10 @@ export class StorageManager {
       totalWins: current.totalWins + (wonMatch ? 1 : 0),
       normalWins: current.normalWins + (wonMatch && difficulty === 'normal' ? 1 : 0),
       hardWins: current.hardWins + (wonMatch && difficulty === 'hard' ? 1 : 0),
+      arenaBestScores: {
+        ...current.arenaBestScores,
+        [arenaId]: Math.max(prevArenaBest, score),
+      },
     };
 
     try {

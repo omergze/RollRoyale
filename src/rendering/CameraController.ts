@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { BallEntityState, ImpactTier, MatchPhase } from '../types/game';
+import { getArenaDefinition } from '../config/arenas';
+import type { ArenaState, BallEntityState, ImpactTier, MatchPhase } from '../types/game';
 import { clamp, lerp } from '../utils/math';
 
 export class CameraController {
@@ -54,15 +55,19 @@ export class CameraController {
   public update(
     phase: MatchPhase,
     player: BallEntityState | undefined,
-    dt: number
+    dt: number,
+    arena?: ArenaState
   ): void {
+    const arenaDef = getArenaDefinition(arena?.arenaId ?? 'classic');
+
     if (phase === 'menu' || !player) {
       // Smooth elevated cinematic orbit around the live 3D arena on Main Menu
       this.menuOrbitAngle += dt * 0.22;
-      const orbitR = 28.5;
+      const scaleFactor = arenaDef.baseRadius / 19.5;
+      const orbitR = 28.5 * (0.85 + 0.15 * scaleFactor);
       const targetX = Math.sin(this.menuOrbitAngle) * orbitR;
       const targetZ = Math.cos(this.menuOrbitAngle) * orbitR;
-      const targetY = 20.5 + Math.sin(this.menuOrbitAngle * 0.7) * 1.4;
+      const targetY = arenaDef.cameraHeight * 0.92 + Math.sin(this.menuOrbitAngle * 0.7) * 1.4;
 
       const smooth = clamp(dt * 3.5, 0, 1);
       this.currentPos.lerp(new THREE.Vector3(targetX, targetY, targetZ), smooth);
@@ -74,23 +79,28 @@ export class CameraController {
     }
 
     // Elevated angled gameplay follow camera:
-    // Blends player position with arena center so player is always framed AND arena edges remain visible
-    const trackX = clamp(player.position.x * 0.54, -11.5, 11.5);
-    const trackZ = clamp(player.position.z * 0.54, -11.5, 11.5);
+    // Adapts framing to the active arena size so holes, obstacles, and outer edges remain readable
+    const shrinkScale = arena
+      ? clamp(0.88 + 0.12 * (arena.currentRadius / Math.max(1, arena.baseRadius)), 0.88, 1.0)
+      : 1.0;
+
+    const maxTrack = arenaDef.cameraTrackClamp * shrinkScale;
+    const trackX = clamp(player.position.x * 0.52, -maxTrack, maxTrack);
+    const trackZ = clamp(player.position.z * 0.52, -maxTrack, maxTrack);
 
     const isBoosting = player.boostActiveTimer > 0;
     const boostZoomOffset = isBoosting && !this.reducedEffects ? 1.4 : 0.0;
 
     const desiredPos = new THREE.Vector3(
       trackX,
-      22.8 + boostZoomOffset * 0.45,
-      trackZ + 23.6 + boostZoomOffset
+      arenaDef.cameraHeight * shrinkScale + boostZoomOffset * 0.45,
+      trackZ + arenaDef.cameraDistance * shrinkScale + boostZoomOffset
     );
 
     const desiredLookAt = new THREE.Vector3(
-      player.position.x * 0.4,
+      player.position.x * 0.38,
       -0.4,
-      player.position.z * 0.4 - 1.0
+      player.position.z * 0.38 - 1.0
     );
 
     const posFollowRate = clamp(dt * 6.8, 0, 1);

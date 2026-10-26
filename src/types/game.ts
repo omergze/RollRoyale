@@ -15,6 +15,24 @@ export type BotDifficulty = 'normal' | 'hard';
 export type GraphicsQuality = 'low' | 'medium' | 'high';
 export type MatchPhase = 'menu' | 'playing' | 'paused' | 'results';
 export type ImpactTier = 'glancing' | 'normal' | 'heavy' | 'boost' | 'perfect_boost';
+export type ArenaId = 'classic' | 'crater' | 'donut' | 'bumper';
+export type MapSelectionId = ArenaId | 'random';
+
+export interface ArenaHoleConfig {
+  id: string;
+  x: number;
+  z: number;
+  radius: number;
+}
+
+export interface ArenaBumperConfig {
+  id: string;
+  x: number;
+  z: number;
+  radius: number;
+  height: number;
+  impulse: number;
+}
 
 export interface PlayerInputCommand {
   entityId: string;
@@ -56,6 +74,7 @@ export interface BallEntityState {
   boostCooldownTimer: number;
   boostDirection: Vector3Like;
   knockbackTimer: number;
+  dangerLevel?: number;
   lastHit: LastHitAttribution | null;
   score: number;
   knockouts: number;
@@ -67,9 +86,14 @@ export interface BallEntityState {
 }
 
 export interface ArenaState {
+  arenaId: ArenaId;
+  arenaName: string;
   baseRadius: number;
   minRadius: number;
   currentRadius: number;
+  innerHoleRadius: number;
+  holes: ArenaHoleConfig[];
+  bumpers: ArenaBumperConfig[];
   isShrinking: boolean;
   shrinkProgress: number; // 0 to 1
   fallThresholdY: number;
@@ -108,6 +132,15 @@ export type GameEvent =
       isPerfectImpact: boolean;
     }
   | {
+      type: 'bumper_hit';
+      timestamp: number;
+      bumperId: string;
+      entityId: string;
+      position: Vector3Like;
+      direction: Vector3Like;
+      impulse: number;
+    }
+  | {
       type: 'boost';
       timestamp: number;
       entityId: string;
@@ -123,6 +156,7 @@ export type GameEvent =
       victimName: string;
       position: Vector3Like;
       isSelfFall: false;
+      viaHole?: boolean;
     }
   | {
       type: 'self_fall';
@@ -131,6 +165,7 @@ export type GameEvent =
       victimName: string;
       position: Vector3Like;
       isSelfFall: true;
+      viaHole?: boolean;
     }
   | {
       type: 'respawn';
@@ -162,6 +197,7 @@ export interface SimulationSnapshot {
 export interface MatchConfig {
   botCount: number;
   difficulty: BotDifficulty;
+  arenaId?: MapSelectionId;
   matchDuration?: number;
   isDemoMode?: boolean;
   seed?: number;
@@ -174,6 +210,7 @@ export interface GameSettings {
   reducedEffects: boolean;
   difficulty: BotDifficulty;
   botCount: number;
+  selectedArena: MapSelectionId;
 }
 
 export interface PlayerStats {
@@ -184,4 +221,5 @@ export interface PlayerStats {
   totalWins: number;
   normalWins: number;
   hardWins: number;
+  arenaBestScores: Record<ArenaId, number>;
 }

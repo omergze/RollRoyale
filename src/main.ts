@@ -5,7 +5,7 @@ import { PhysicsWorld } from './physics/PhysicsWorld';
 import { SceneManager } from './rendering/SceneManager';
 import { GameSimulation, PLAYER_ENTITY_ID } from './simulation/GameSimulation';
 import { StorageManager } from './storage/StorageManager';
-import type { GameEvent, GameSettings, SimulationSnapshot } from './types/game';
+import type { GameEvent, GameSettings, MapSelectionId, SimulationSnapshot } from './types/game';
 import { UIManager } from './ui/UIManager';
 
 class RollRoyaleApp {
@@ -45,6 +45,7 @@ class RollRoyaleApp {
       onReturnToMenu: () => this.returnToMenu(),
       onPauseClick: () => this.togglePause(),
       onSettingsChanged: (newSettings) => this.applySettings(newSettings),
+      onArenaSelectionChanged: (selection) => this.previewArenaOnMenu(selection),
       onButtonClickSound: () => this.soundManager.playClick(),
     });
 
@@ -62,25 +63,42 @@ class RollRoyaleApp {
     requestAnimationFrame((now) => this.frameLoop(now));
   }
 
-  public startSoloMatch(customDuration?: number): void {
+  public startSoloMatch(customDuration?: number, arenaOverride?: MapSelectionId): void {
     this.inputManager.clearAllInputs();
     this.networkAdapter.startMatch({
       botCount: this.settings.botCount,
       difficulty: this.settings.difficulty,
       matchDuration: customDuration,
       isDemoMode: false,
+      arenaId: arenaOverride ?? this.settings.selectedArena,
     });
     this.uiManager.showHudScreen();
   }
 
   public returnToMenu(): void {
     this.inputManager.clearAllInputs();
+    const previewArena: MapSelectionId =
+      this.settings.selectedArena === 'random' ? 'crater' : this.settings.selectedArena;
     this.networkAdapter.startMatch({
       botCount: 5,
       difficulty: 'hard',
       isDemoMode: true,
+      arenaId: previewArena,
     });
     this.uiManager.showMenuScreen();
+  }
+
+  private previewArenaOnMenu(selection: MapSelectionId): void {
+    if (this.simulation.getPhase() !== 'menu') {
+      return;
+    }
+    const previewArena: MapSelectionId = selection === 'random' ? 'crater' : selection;
+    this.networkAdapter.startMatch({
+      botCount: 5,
+      difficulty: 'hard',
+      isDemoMode: true,
+      arenaId: previewArena,
+    });
   }
 
   public togglePause(): void {
@@ -142,6 +160,8 @@ class RollRoyaleApp {
     for (const ev of events) {
       if (ev.type === 'collision') {
         this.soundManager.playCollision(ev.relativeSpeed, ev.isBoostedImpact, ev.impactTier);
+      } else if (ev.type === 'bumper_hit') {
+        this.soundManager.playBumperHit(ev.entityId === PLAYER_ENTITY_ID);
       } else if (ev.type === 'boost') {
         this.soundManager.playBoost(ev.entityId === PLAYER_ENTITY_ID);
       } else if (ev.type === 'knockout') {
@@ -155,13 +175,15 @@ class RollRoyaleApp {
         const wonMatch = playerEntry.rank === 1;
         this.soundManager.playMatchEnd(wonMatch);
 
+        const activeArenaId = snapshot.arena.arenaId;
         const { stats, isNewBestScore } = StorageManager.recordMatchResult(
           playerEntry.score,
           playerEntry.knockouts,
           wonMatch,
-          this.settings.difficulty
+          this.settings.difficulty,
+          activeArenaId
         );
-        this.uiManager.showResultsScreen(ev.rankings, stats, isNewBestScore);
+        this.uiManager.showResultsScreen(ev.rankings, stats, isNewBestScore, activeArenaId);
       }
     }
   }

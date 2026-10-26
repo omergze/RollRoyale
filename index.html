@@ -33,6 +33,72 @@
 
           <div class="menu-card">
             <div class="config-group">
+              <div class="config-label-row">
+                <label class="config-label">ARENA SELECT</label>
+                <span id="arena-best-badge" class="config-value">ARENA BEST: 0 KOs</span>
+              </div>
+              <div class="arena-selector" role="radiogroup" aria-label="Arena Map Selection">
+                <button
+                  type="button"
+                  id="arena-classic"
+                  class="arena-select-btn active"
+                  data-arena="classic"
+                >
+                  CLASSIC
+                </button>
+                <button
+                  type="button"
+                  id="arena-crater"
+                  class="arena-select-btn"
+                  data-arena="crater"
+                >
+                  CRATER
+                </button>
+                <button
+                  type="button"
+                  id="arena-donut"
+                  class="arena-select-btn"
+                  data-arena="donut"
+                >
+                  DONUT
+                </button>
+                <button
+                  type="button"
+                  id="arena-bumper"
+                  class="arena-select-btn"
+                  data-arena="bumper"
+                >
+                  BUMPER
+                </button>
+                <button
+                  type="button"
+                  id="arena-random"
+                  class="arena-select-btn"
+                  data-arena="random"
+                >
+                  RANDOM
+                </button>
+              </div>
+              <div class="arena-preview-card" aria-live="polite">
+                <canvas
+                  id="arena-preview-canvas"
+                  width="104"
+                  height="104"
+                  aria-label="Arena Layout Preview"
+                ></canvas>
+                <div class="arena-preview-info">
+                  <div class="arena-preview-header">
+                    <span id="arena-preview-title" class="arena-preview-title">CLASSIC ARENA</span>
+                    <span id="arena-preview-subtitle" class="arena-preview-tag">PURE KNOCKOUT DECK</span>
+                  </div>
+                  <p id="arena-preview-desc" class="arena-preview-desc">
+                    Balanced circular platform with no internal hazards. Final 30s shrink forces high-stakes rim duels.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-group">
               <label class="config-label">AI DIFFICULTY</label>
               <div class="segmented-control" role="radiogroup" aria-label="AI Difficulty">
                 <button
@@ -73,7 +139,7 @@
             <div class="menu-actions">
               <button type="button" id="btn-play-solo" class="btn-primary">
                 <span>PLAY SOLO</span>
-                <span class="btn-sub">KNOCKOUT RUSH · 2:00</span>
+                <span id="btn-play-sub" class="btn-sub">CLASSIC ARENA · 2:00</span>
               </button>
               <button type="button" id="btn-open-settings" class="btn-secondary">
                 SETTINGS
@@ -135,7 +201,7 @@
           <!-- Center: Match Timer & Shrink Warning -->
           <div class="hud-center-panel">
             <div class="hud-timer-box" id="hud-timer-box">
-              <span class="hud-mode-tag">KNOCKOUT RUSH</span>
+              <span class="hud-mode-tag" id="hud-mode-tag">CLASSIC ARENA</span>
               <span class="hud-timer" id="hud-timer">02:00</span>
             </div>
             <div id="hud-shrink-banner" class="hud-shrink-banner hidden">

@@ -11,7 +11,8 @@ export class ScoringSystem {
   public static processRingOut(
     victim: BallEntityState,
     allEntities: ReadonlyMap<string, BallEntityState>,
-    currentTime: number
+    currentTime: number,
+    viaHole = false
   ): Extract<GameEvent, { type: 'knockout' | 'self_fall' }> {
     victim.falls += 1;
     victim.streak = 0;
@@ -45,6 +46,7 @@ export class ScoringSystem {
           victimName: victim.name,
           position: { ...victim.position },
           isSelfFall: false,
+          viaHole,
         };
       }
     }
@@ -56,6 +58,7 @@ export class ScoringSystem {
       victimName: victim.name,
       position: { ...victim.position },
       isSelfFall: true,
+      viaHole,
     };
   }
 

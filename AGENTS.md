@@ -49,12 +49,11 @@ npm run test:e2e
 
 ### Current Status
 - **Milestone 1** (Single-Player Knockout Rush, 3D Arena with Final-30s Shrink, Rolling Physics, Boost, Knockback & Attribution, Normal/Hard AI Bots, Desktop & iPad Touch Controls, Web Audio Synth, LocalStorage Stats, Unit & E2E Tests) is **complete and passing**.
-- **Gameplay Feel, Knockback & AI Improvement Update** (5-Tier Collision System `glancing`/`normal`/`heavy`/`boost`/`perfect_boost`, `0.24s` Perfect Impact surge window, Post-Hit Knockback Momentum Preservation `knockbackTimer` with limited DI steering, Anti-Clustering AI with crowd penalties & momentum run-ups, Directional Impact Cones & Dual Shockwave Rings, Centralized Tuning Config in `src/config/constants.ts`, 15-test Vitest unit/multi-seed suite & Playwright E2E suite) is **complete and passing**.
+- **Gameplay Feel, Knockback & AI Improvement Update** (5-Tier Collision System `glancing`/`normal`/`heavy`/`boost`/`perfect_boost`, `0.24s` Perfect Impact surge window, Post-Hit Knockback Momentum Preservation `knockbackTimer` with limited DI steering, Anti-Clustering AI with crowd penalties & momentum run-ups, Directional Impact Cones & Dual Shockwave Rings, Centralized Tuning Config in `src/config/constants.ts`, Vitest unit/multi-seed suite & Playwright E2E suite) is **complete and passing**.
+- **Multi-Arena & Gameplay Expansion Update** (Modular `src/config/arenas.ts` registry for `Classic Arena`, `Crater Arena` with 3 physical trimesh floor holes, `Donut Arena` with central physical void, `Bumper Arena` with 4 kinetic pulse pillars, and `Random Map`; Extruded 3D perforated decks & glowing hole shafts in `ArenaRenderer.ts`; Hole knockout attribution `viaHole: true` & bank-shot bumper attribution; AI hole/bumper tangent navigation & 16-ray context steering; Arena-adaptive `CameraController`; Main Menu Arena Selector + 2D schematic preview + per-arena best scores; 22-test Vitest suite & Multi-Arena Playwright E2E suite) is **complete and passing**.
 
-### What to Build Next (Milestone 2 / Polish)
+### What to Build Next (Milestone 3 / Polish)
 1. **Solo Challenge Modes**:
    - Add an optional mode selector on the Main Menu for **Survival Rush** (endless waves of bots where 1 fall = game over) or **Target Blitz** (first to 10 Knockouts wins).
-2. **Dynamic Arena Obstacles (Optional Variant)**:
-   - Add a second arena variant featuring a central pulsing energy bumper pillar using a kinematic Rapier cylinder collider.
-3. **Colyseus Authoritative Multiplayer Prototype**:
+2. **Colyseus Authoritative Multiplayer Prototype**:
    - Create a `server/` workspace using Node.js + `colyseus` that hosts `GameSimulation` and implements a `ColyseusNetworkAdapter` client in `src/network/`.

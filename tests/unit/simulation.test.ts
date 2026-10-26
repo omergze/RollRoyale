@@ -1,6 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BotController } from '../../src/ai/BotController';
 import {
+  ARENA_IDS,
+  getArenaDefinition,
+  resolveMapSelection,
+} from '../../src/config/arenas';
+import {
   ARENA_CONSTANTS,
   BOOST_TUNING,
   COMBAT_TUNING,
@@ -12,7 +17,7 @@ import { CollisionSystem } from '../../src/simulation/CollisionSystem';
 import { GameSimulation, PLAYER_ENTITY_ID } from '../../src/simulation/GameSimulation';
 import { MovementController } from '../../src/simulation/MovementController';
 import { ScoringSystem } from '../../src/simulation/ScoringSystem';
-import type { BallEntityState } from '../../src/types/game';
+import type { ArenaId, BallEntityState } from '../../src/types/game';
 import { identityQuat, lengthXZ, vec3 } from '../../src/utils/math';
 
 function createDummyBall(overrides: Partial<BallEntityState> = {}): BallEntityState {
@@ -633,6 +638,286 @@ describe('RollRoyale Core Simulation & Physics Suite', () => {
       expect(totalBoostedCollisions).toBeGreaterThanOrEqual(8);
       expect(totalKnockoutsAcrossSeeds).toBeGreaterThanOrEqual(4);
       expect(totalRingOutsAcrossSeeds).toBeGreaterThanOrEqual(6);
+    });
+  });
+
+  describe('7. Multi-Arena System: Crater, Donut & Bumper Arenas, Physical Holes & AI Navigation', () => {
+    it('configures Classic, Crater, Donut, Bumper, and Random arenas accurately', () => {
+      const classicDef = getArenaDefinition('classic');
+      const craterDef = getArenaDefinition('crater');
+      const donutDef = getArenaDefinition('donut');
+      const bumperDef = getArenaDefinition('bumper');
+
+      expect(classicDef.holes.length).toBe(0);
+      expect(classicDef.bumpers.length).toBe(0);
+      expect(craterDef.baseRadius).toBeCloseTo(25.5, 2);
+      expect(craterDef.holes.length).toBe(3);
+      expect(donutDef.baseRadius).toBeCloseTo(23.0, 2);
+      expect(donutDef.innerHoleRadius).toBeCloseTo(7.2, 2);
+      expect(donutDef.holes.length).toBe(1);
+      expect(bumperDef.baseRadius).toBeCloseTo(22.5, 2);
+      expect(bumperDef.bumpers.length).toBe(4);
+
+      // Verify deterministic random map resolution across seeds
+      const resolvedMaps = new Set<ArenaId>();
+      for (let seed = 0; seed < 8; seed++) {
+        const picked = resolveMapSelection('random', seed);
+        expect(ARENA_IDS).toContain(picked);
+        resolvedMaps.add(picked);
+      }
+      expect(resolvedMaps.size).toBe(4);
+    });
+
+    it('guarantees safe initial spawns and dynamic respawns outside holes and bumpers on all 4 arenas', () => {
+      for (const arenaId of ARENA_IDS) {
+        const arena = new ArenaSystem(arenaId);
+        const spawns = arena.getInitialSpawnPositions(8);
+        expect(spawns.length).toBe(8);
+
+        for (const pos of spawns) {
+          expect(arena.isPositionSafeOnDeck(pos, 1.4)).toBe(true);
+          expect(arena.getOverlappingHole(pos, PHYSICS_CONSTANTS.BALL_RADIUS)).toBeNull();
+        }
+
+        // Also test respawns when the arena is fully shrunk at t=0s remaining
+        arena.update(0);
+        const activeOpponents = spawns.slice(0, 5).map((p, idx) =>
+          createDummyBall({
+            id: `opp-${idx}`,
+            position: p,
+          })
+        );
+
+        for (let slot = 0; slot < 20; slot++) {
+          const respawnPos = arena.findSafeRespawnPosition(activeOpponents, slot);
+          expect(arena.isPositionSafeOnDeck(respawnPos, 1.1)).toBe(true);
+          expect(arena.getOverlappingHole(respawnPos, PHYSICS_CONSTANTS.BALL_RADIUS)).toBeNull();
+        }
+      }
+    });
+
+    it('physically drops balls through Crater Arena holes and Donut Arena central hole while supporting solid deck', () => {
+      // 1. Crater Arena physical trimesh hole verification
+      const craterArena = new ArenaSystem('crater');
+      const craterState = craterArena.getState();
+      const craterPhysics = new PhysicsWorld(craterState.baseRadius);
+      craterPhysics.configureArenaGeometry(
+        craterState.baseRadius,
+        craterState.holes,
+        craterState.bumpers
+      );
+
+      const hole0 = craterState.holes[0];
+      craterPhysics.addBallBody('on-deck', vec3(0, 1.0, 0), PHYSICS_CONSTANTS.BALL_RADIUS, 1.0);
+      craterPhysics.addBallBody(
+        'over-crater',
+        vec3(hole0.x, 1.0, hole0.z),
+        PHYSICS_CONSTANTS.BALL_RADIUS,
+        1.0
+      );
+
+      for (let i = 0; i < 65; i++) {
+        craterPhysics.step(['on-deck', 'over-crater'], PHYSICS_CONSTANTS.BALL_RADIUS);
+      }
+
+      const deckBallPos = craterPhysics.getBallPosition('on-deck');
+      const fallenCraterPos = craterPhysics.getBallPosition('over-crater');
+
+      expect(deckBallPos.y).toBeGreaterThan(0.85);
+      expect(fallenCraterPos.y).toBeLessThanOrEqual(ARENA_CONSTANTS.FALL_THRESHOLD_Y);
+      const craterBounds = craterArena.checkOutOfBounds(fallenCraterPos);
+      expect(craterBounds.out).toBe(true);
+      expect(craterBounds.viaHole).toBe(true);
+      craterPhysics.dispose();
+
+      // 2. Donut Arena physical annulus trimesh verification
+      const donutArena = new ArenaSystem('donut');
+      const donutState = donutArena.getState();
+      const donutPhysics = new PhysicsWorld(donutState.baseRadius);
+      donutPhysics.configureArenaGeometry(
+        donutState.baseRadius,
+        donutState.holes,
+        donutState.bumpers
+      );
+
+      donutPhysics.addBallBody('on-ring', vec3(14.0, 1.0, 0), PHYSICS_CONSTANTS.BALL_RADIUS, 1.0);
+      donutPhysics.addBallBody('in-core', vec3(0, 1.0, 0), PHYSICS_CONSTANTS.BALL_RADIUS, 1.0);
+
+      for (let i = 0; i < 65; i++) {
+        donutPhysics.step(['on-ring', 'in-core'], PHYSICS_CONSTANTS.BALL_RADIUS);
+      }
+
+      const ringBallPos = donutPhysics.getBallPosition('on-ring');
+      const coreBallPos = donutPhysics.getBallPosition('in-core');
+
+      expect(ringBallPos.y).toBeGreaterThan(0.85);
+      expect(coreBallPos.y).toBeLessThanOrEqual(ARENA_CONSTANTS.FALL_THRESHOLD_Y);
+      const donutBounds = donutArena.checkOutOfBounds(coreBallPos);
+      expect(donutBounds.out).toBe(true);
+      expect(donutBounds.viaHole).toBe(true);
+      donutPhysics.dispose();
+    });
+
+    it('attributes hole knockouts with viaHole=true and awards +1 score when pushed into an internal hole', () => {
+      const sim = new GameSimulation();
+      sim.startMatch({
+        botCount: 3,
+        difficulty: 'normal',
+        arenaId: 'donut',
+        matchDuration: 60.0,
+        isDemoMode: false,
+      });
+
+      const player = sim.getEntity(PLAYER_ENTITY_ID)!;
+      const bot = sim.getEntity('bot-1')!;
+
+      // Credit player with hitting bot-1 toward the central Donut hole
+      bot.lastHit = {
+        attackerId: player.id,
+        attackerName: player.name,
+        timestamp: 0.05,
+        impactSpeed: 19,
+        impulseMagnitude: 24,
+      };
+      sim.stepFixed(1 / 60);
+
+      // Eliminate bot-1 via hole (`viaHole = true`) and verify knockout attribution & score
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sim as any).eliminateEntity(bot, true);
+
+      const events = sim.drainEvents();
+      const holeKoEvent = events.find(
+        (ev) => ev.type === 'knockout' && ev.victimId === bot.id && ev.viaHole === true
+      );
+
+      expect(holeKoEvent).toBeDefined();
+      expect(player.score).toBe(1);
+      expect(player.knockouts).toBe(1);
+      sim.dispose();
+    });
+
+    it('delivers bounded radial rebounds off Bumper Arena pillars while preserving lastHit for bank-shot knockouts', () => {
+      const collisionSystem = new CollisionSystem();
+      const bumperDef = getArenaDefinition('bumper').bumpers[0]; // (5.515, 5.515)
+
+      const victim = createDummyBall({
+        id: 'bot-1',
+        name: 'NOVA',
+        position: vec3(bumperDef.x + bumperDef.radius + 0.9, 1.0, bumperDef.z),
+        velocity: vec3(-12.0, 0, 0), // Moving into the bumper
+        lastHit: {
+          attackerId: PLAYER_ENTITY_ID,
+          attackerName: 'YOU',
+          timestamp: 5.0,
+          impactSpeed: 16,
+          impulseMagnitude: 20,
+        },
+      });
+
+      const rebound = collisionSystem.resolveBumperCollision(victim, bumperDef, 5.4);
+      expect(rebound.applied).toBe(true);
+      expect(rebound.event?.type).toBe('bumper_hit');
+      expect(rebound.velocity.x).toBeGreaterThan(12.0); // Bounced strongly outward (+X)
+      expect(lengthXZ(rebound.velocity)).toBeLessThanOrEqual(
+        COMBAT_TUNING.MAX_RESULTANT_HORIZONTAL_SPEED
+      );
+      // Bank-shot attribution: victim.lastHit must remain intact!
+      expect(victim.lastHit?.attackerId).toBe(PLAYER_ENTITY_ID);
+    });
+
+    it('AI navigates tangentially around the Donut central hole and recovers outward when near an internal hole rim', () => {
+      const botController = new BotController();
+      const donutArena = new ArenaSystem('donut').getState();
+
+      // 1. Bot at (-13.5, 0) targeting opponent across the central hole at (+13.5, 0)
+      const ringBot = createDummyBall({
+        id: 'bot-ring',
+        isPlayer: false,
+        difficulty: 'hard',
+        position: vec3(-13.5, 1, 0.4),
+        velocity: vec3(5.0, 0, 0),
+      });
+      const oppositeTarget = createDummyBall({
+        id: 'player-0',
+        position: vec3(13.5, 1, 0),
+      });
+
+      const navCmd = botController.computeBotInput(
+        ringBot,
+        [ringBot, oppositeTarget],
+        donutArena,
+        1 / 60
+      );
+
+      // Instead of driving straight along +X into the (0,0) hole (moveZ ~ 0),
+      // the bot must deflect tangentially around the ring (|moveZ| > 0.35) and NOT boost into the hole
+      expect(Math.abs(navCmd.moveZ)).toBeGreaterThan(0.35);
+      expect(navCmd.boostPressed).toBe(false);
+
+      // 2. Bot dangerously close to the inner Donut hole rim (r = 7.9, hole radius = 7.2) moving inward
+      const endangeredHoleBot = createDummyBall({
+        id: 'bot-hole-danger',
+        isPlayer: false,
+        difficulty: 'hard',
+        position: vec3(-7.9, 1, 0),
+        velocity: vec3(8.5, 0, 0), // Moving toward (0,0) hole!
+      });
+
+      const recoveryCmd = botController.computeBotInput(
+        endangeredHoleBot,
+        [endangeredHoleBot, oppositeTarget],
+        donutArena,
+        1 / 60
+      );
+
+      // Must steer outward away from the central hole (-X) and trigger emergency boost!
+      expect(recoveryCmd.moveX).toBeLessThan(-0.7);
+      expect(recoveryCmd.boostPressed).toBe(true);
+    });
+
+    it('runs stable multi-bot matches across Crater, Donut, and Bumper arenas with hole knockouts and bumper hits', () => {
+      const arenasToTest: ArenaId[] = ['crater', 'donut', 'bumper'];
+      let holeEliminations = 0;
+      let bumperHitsCount = 0;
+      let totalKos = 0;
+
+      for (const arenaId of arenasToTest) {
+        const sim = new GameSimulation();
+        sim.startMatch({
+          botCount: 5,
+          difficulty: 'hard',
+          arenaId,
+          matchDuration: 35.0,
+          isDemoMode: true,
+          seed: 707,
+        });
+
+        const steps = 35 * 60;
+        for (let step = 0; step < steps; step++) {
+          sim.stepFixed(1 / 60);
+          for (const ev of sim.drainEvents()) {
+            if (ev.type === 'knockout') {
+              totalKos++;
+              if (ev.viaHole) holeEliminations++;
+            } else if (ev.type === 'self_fall' && ev.viaHole) {
+              holeEliminations++;
+            } else if (ev.type === 'bumper_hit') {
+              bumperHitsCount++;
+            }
+          }
+
+          for (const ent of sim.getEntities()) {
+            expect(Number.isFinite(ent.position.x)).toBe(true);
+            expect(Number.isFinite(ent.position.y)).toBe(true);
+            expect(Number.isFinite(ent.position.z)).toBe(true);
+          }
+        }
+        sim.dispose();
+      }
+
+      expect(totalKos).toBeGreaterThanOrEqual(2);
+      expect(holeEliminations).toBeGreaterThanOrEqual(1);
+      expect(bumperHitsCount).toBeGreaterThanOrEqual(3);
     });
   });
 });

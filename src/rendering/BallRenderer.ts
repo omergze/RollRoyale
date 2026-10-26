@@ -71,14 +71,23 @@ export class BallRenderer {
       );
       node.sphereMesh.quaternion.set(interpQuat.x, interpQuat.y, interpQuat.z, interpQuat.w);
 
-      // Boost glow feedback
+      // Boost & hazard danger glow feedback
+      const danger = entity.dangerLevel ?? 0;
       if (entity.boostActiveTimer > 0) {
         node.sphereMat.emissiveIntensity = 0.85;
         node.groundRing.scale.setScalar(1.28);
+        node.groundRingMat.color.set(entity.colorPrimary);
         node.groundRingMat.opacity = 0.95;
+      } else if (danger > 0.28) {
+        const dangerPulse = 0.5 + 0.5 * Math.sin(elapsedTime * 14.0);
+        node.sphereMat.emissiveIntensity = 0.34 + danger * 0.28;
+        node.groundRing.scale.setScalar(1.0 + danger * 0.22 * dangerPulse);
+        node.groundRingMat.color.setHex(dangerPulse > 0.45 ? 0xff2e93 : 0xff9f1c);
+        node.groundRingMat.opacity = 0.65 + danger * 0.32;
       } else {
         node.sphereMat.emissiveIntensity = 0.28;
         node.groundRing.scale.setScalar(1.0);
+        node.groundRingMat.color.set(entity.colorPrimary);
         node.groundRingMat.opacity = entity.isPlayer ? 0.8 : 0.48;
       }
 

@@ -1,5 +1,11 @@
 import { PHYSICS_CONSTANTS } from '../config/constants';
-import type { BallEntityState, GameEvent, ImpactTier, Vector3Like } from '../types/game';
+import type {
+  ArenaBumperConfig,
+  BallEntityState,
+  GameEvent,
+  ImpactTier,
+  Vector3Like,
+} from '../types/game';
 import { clamp, dotXZ, lengthXZ, normalizeXZ } from '../utils/math';
 
 export interface CollisionResolution {
@@ -7,6 +13,12 @@ export interface CollisionResolution {
   velocityA: Vector3Like;
   velocityB: Vector3Like;
   event?: Extract<GameEvent, { type: 'collision' }>;
+}
+
+export interface BumperCollisionResolution {
+  applied: boolean;
+  velocity: Vector3Like;
+  event?: Extract<GameEvent, { type: 'bumper_hit' }>;
 }
 
 interface DirectionalStrikeMetrics {
@@ -424,5 +436,89 @@ export class CollisionSystem {
       return PHYSICS_CONSTANTS.SIDE_HIT_BONUS_MULTIPLIER;
     }
     return 1.0;
+  }
+
+  /**
+   * Resolves a physical rebound when a ball collides with a kinetic energy bumper pillar.
+   * Preserves `ball.lastHit` so bank-shot knockouts still credit the opponent who knocked the ball into the bumper.
+   */
+  public resolveBumperCollision(
+    ball: BallEntityState,
+    bumper: ArenaBumperConfig,
+    currentTime: number
+  ): BumperCollisionResolution {
+    if (!ball.isAlive) {
+      return { applied: false, velocity: { ...ball.velocity } };
+    }
+
+    const key = `bumper::${ball.id}::${bumper.id}`;
+    const lastHitTime = this.pairCooldowns.get(key);
+    if (lastHitTime !== undefined && currentTime - lastHitTime < 0.16) {
+      return { applied: false, velocity: { ...ball.velocity } };
+    }
+
+    this.pairCooldowns.set(key, currentTime);
+
+    let outwardNormal = normalizeXZ({
+      x: ball.position.x - bumper.x,
+      y: 0,
+      z: ball.position.z - bumper.z,
+    });
+    if (lengthXZ(outwardNormal) < 1e-5) {
+      outwardNormal = { x: 1, y: 0, z: 0 };
+    }
+
+    const inwardSpeed = Math.max(0, -dotXZ(ball.velocity, outwardNormal));
+    const withoutInwardX = ball.velocity.x + inwardSpeed * outwardNormal.x;
+    const withoutInwardZ = ball.velocity.z + inwardSpeed * outwardNormal.z;
+
+    const reboundMagnitude = clamp(
+      bumper.impulse + inwardSpeed * 0.45,
+      bumper.impulse * 0.85,
+      26.5
+    );
+
+    let vx = outwardNormal.x * reboundMagnitude + withoutInwardX * 0.45;
+    let vz = outwardNormal.z * reboundMagnitude + withoutInwardZ * 0.45;
+
+    const horizSpeed = Math.hypot(vx, vz);
+    if (horizSpeed > PHYSICS_CONSTANTS.MAX_RESULTANT_HORIZONTAL_SPEED * 0.85) {
+      const scale = (PHYSICS_CONSTANTS.MAX_RESULTANT_HORIZONTAL_SPEED * 0.85) / horizSpeed;
+      vx *= scale;
+      vz *= scale;
+    }
+
+    ball.knockbackTimer = Math.max(ball.knockbackTimer ?? 0, 0.22);
+    ball.squashStretch = { x: 1.32, y: 0.75, z: 1.32 };
+
+    // Refresh existing lastHit timestamp slightly on a bank-shot so bumper deflection knockouts count reliably
+    if (
+      ball.lastHit &&
+      currentTime - ball.lastHit.timestamp <= 3.8
+    ) {
+      ball.lastHit.timestamp = Math.max(ball.lastHit.timestamp, currentTime - 1.0);
+    }
+
+    return {
+      applied: true,
+      velocity: {
+        x: vx,
+        y: Math.min(PHYSICS_CONSTANTS.MAX_UPWARD_VELOCITY, Math.max(ball.velocity.y, 0) + 0.55),
+        z: vz,
+      },
+      event: {
+        type: 'bumper_hit',
+        timestamp: currentTime,
+        bumperId: bumper.id,
+        entityId: ball.id,
+        position: {
+          x: bumper.x + outwardNormal.x * bumper.radius,
+          y: 0.8,
+          z: bumper.z + outwardNormal.z * bumper.radius,
+        },
+        direction: outwardNormal,
+        impulse: reboundMagnitude,
+      },
+    };
   }
 }

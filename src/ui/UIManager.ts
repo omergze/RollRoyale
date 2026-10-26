@@ -1,10 +1,13 @@
+import { ARENA_DEFINITIONS, getArenaDefinition } from '../config/arenas';
 import { PHYSICS_CONSTANTS } from '../config/constants';
 import { PLAYER_ENTITY_ID } from '../simulation/GameSimulation';
 import type {
+  ArenaId,
   BotDifficulty,
   GameEvent,
   GameSettings,
   GraphicsQuality,
+  MapSelectionId,
   PlayerRankingEntry,
   PlayerStats,
   SimulationSnapshot,
@@ -18,6 +21,7 @@ export interface UIActions {
   onReturnToMenu: () => void;
   onPauseClick: () => void;
   onSettingsChanged: (settings: GameSettings) => void;
+  onArenaSelectionChanged?: (selection: MapSelectionId) => void;
   onButtonClickSound: () => void;
 }
 
@@ -38,6 +42,7 @@ export class UIManager {
   private hudPlayerScore: HTMLElement;
   private hudPlayerFalls: HTMLElement;
   private hudTimerBox: HTMLElement;
+  private hudModeTag: HTMLElement;
   private hudTimer: HTMLElement;
   private hudShrinkBanner: HTMLElement;
   private hudStatusPill: HTMLElement;
@@ -51,7 +56,10 @@ export class UIManager {
 
   constructor(settings: GameSettings, stats: PlayerStats, actions: UIActions) {
     this.settings = { ...settings };
-    this.stats = { ...stats };
+    this.stats = {
+      ...stats,
+      arenaBestScores: { ...stats.arenaBestScores },
+    };
     this.actions = actions;
 
     this.menuScreen = document.getElementById('menu-screen')!;
@@ -64,6 +72,7 @@ export class UIManager {
     this.hudPlayerScore = document.getElementById('hud-player-score')!;
     this.hudPlayerFalls = document.getElementById('hud-player-falls')!;
     this.hudTimerBox = document.getElementById('hud-timer-box')!;
+    this.hudModeTag = document.getElementById('hud-mode-tag')!;
     this.hudTimer = document.getElementById('hud-timer')!;
     this.hudShrinkBanner = document.getElementById('hud-shrink-banner')!;
     this.hudStatusPill = document.getElementById('hud-status-pill')!;
@@ -82,6 +91,19 @@ export class UIManager {
   }
 
   private bindEvents(): void {
+    // Arena map selection
+    const arenaBtns = document.querySelectorAll<HTMLButtonElement>('[data-arena]');
+    arenaBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.actions.onButtonClickSound();
+        const selected = btn.dataset.arena as MapSelectionId;
+        this.settings.selectedArena = selected;
+        this.syncMenuControls();
+        this.actions.onSettingsChanged({ ...this.settings });
+        this.actions.onArenaSelectionChanged?.(selected);
+      });
+    });
+
     // Difficulty selection
     const diffBtns = document.querySelectorAll<HTMLButtonElement>('[data-difficulty]');
     diffBtns.forEach((btn) => {
@@ -196,6 +218,11 @@ export class UIManager {
   }
 
   private syncMenuControls(): void {
+    const arenaBtns = document.querySelectorAll<HTMLButtonElement>('[data-arena]');
+    arenaBtns.forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.arena === this.settings.selectedArena);
+    });
+
     const diffBtns = document.querySelectorAll<HTMLButtonElement>('[data-difficulty]');
     diffBtns.forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.difficulty === this.settings.difficulty);
@@ -210,6 +237,140 @@ export class UIManager {
     if (botDisplay) {
       botDisplay.textContent = `${this.settings.botCount} BOTS (${this.settings.botCount + 1} PLAYERS)`;
     }
+
+    this.updateArenaPreviewCard();
+  }
+
+  private updateArenaPreviewCard(): void {
+    const sel = this.settings.selectedArena;
+    const titleEl = document.getElementById('arena-preview-title');
+    const subEl = document.getElementById('arena-preview-subtitle');
+    const descEl = document.getElementById('arena-preview-desc');
+    const bestBadgeEl = document.getElementById('arena-best-badge');
+    const playSubEl = document.getElementById('btn-play-sub');
+    const canvas = document.getElementById('arena-preview-canvas') as HTMLCanvasElement | null;
+
+    if (sel === 'random') {
+      if (titleEl) titleEl.textContent = 'RANDOM MAP';
+      if (subEl) subEl.textContent = '4 ARENAS IN ROTATION';
+      if (descEl) {
+        descEl.textContent =
+          'Picks Classic, Crater, Donut, or Bumper Arena at match start for unpredictable variety!';
+      }
+      if (bestBadgeEl) {
+        bestBadgeEl.textContent = `ALL-MAP BEST: ${this.stats.bestScore} KOs`;
+      }
+      if (playSubEl) {
+        playSubEl.textContent = 'RANDOM ARENA · 2:00';
+      }
+    } else {
+      const def = getArenaDefinition(sel);
+      if (titleEl) titleEl.textContent = def.name;
+      if (subEl) subEl.textContent = def.badge;
+      if (descEl) descEl.textContent = def.subtitle;
+      const mapBest = this.stats.arenaBestScores?.[sel] ?? 0;
+      if (bestBadgeEl) {
+        bestBadgeEl.textContent = `ARENA BEST: ${mapBest} KOs`;
+      }
+      if (playSubEl) {
+        playSubEl.textContent = `${def.name} · 2:00`;
+      }
+    }
+
+    if (canvas) {
+      this.drawArenaPreviewCanvas(canvas, sel);
+    }
+  }
+
+  private drawArenaPreviewCanvas(canvas: HTMLCanvasElement, selection: MapSelectionId): void {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+    ctx.clearRect(0, 0, w, h);
+
+    // Subtle dark radial background
+    const bgGrad = ctx.createRadialGradient(cx, cy, 4, cx, cy, w * 0.52);
+    bgGrad.addColorStop(0, '#0E1C38');
+    bgGrad.addColorStop(1, '#050A16');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    const previewArenaId: ArenaId = selection === 'random' ? 'crater' : selection;
+    const def = ARENA_DEFINITIONS[previewArenaId];
+    const scale = (w * 0.41) / def.baseRadius;
+    const outerPx = def.baseRadius * scale;
+
+    // Deck surface fill
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerPx, 0, Math.PI * 2);
+    ctx.fillStyle = '#132547';
+    ctx.fill();
+
+    // Concentric tactical rings
+    ctx.strokeStyle = def.theme.accentHex;
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 1.2;
+    [0.36, 0.68].forEach((rFrac) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerPx * rFrac, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1.0;
+
+    // Punch out internal holes and draw glowing danger rims
+    for (const hole of def.holes) {
+      const hx = cx + hole.x * scale;
+      const hy = cy + hole.z * scale;
+      const hr = Math.max(4, hole.radius * scale);
+
+      ctx.beginPath();
+      ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+      ctx.fillStyle = '#040812';
+      ctx.fill();
+
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = def.theme.hazardHex;
+      ctx.stroke();
+    }
+
+    // Draw kinetic bumpers
+    for (const bumper of def.bumpers) {
+      const bx = cx + bumper.x * scale;
+      const by = cy + bumper.z * scale;
+      const br = Math.max(4.2, bumper.radius * scale * 1.4);
+
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fillStyle = '#06D6A0';
+      ctx.fill();
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.stroke();
+    }
+
+    // Outer glowing rim
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerPx, 0, Math.PI * 2);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = def.theme.primaryHex;
+    ctx.stroke();
+
+    if (selection === 'random') {
+      ctx.fillStyle = 'rgba(4, 10, 24, 0.68)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#00F0FF';
+      ctx.font = '900 32px "Inter", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', cx, cy + 2);
+    }
+
+    ctx.restore();
   }
 
   private syncSettingsControls(): void {
@@ -235,7 +396,10 @@ export class UIManager {
   }
 
   public updateCareerStrip(stats: PlayerStats): void {
-    this.stats = { ...stats };
+    this.stats = {
+      ...stats,
+      arenaBestScores: { ...stats.arenaBestScores },
+    };
     const bestEl = document.getElementById('menu-best-score');
     const totalKosEl = document.getElementById('menu-total-kos');
     const totalWinsEl = document.getElementById('menu-total-wins');
@@ -243,6 +407,7 @@ export class UIManager {
     if (bestEl) bestEl.textContent = `${stats.bestScore} KOs`;
     if (totalKosEl) totalKosEl.textContent = `${stats.totalKnockouts}`;
     if (totalWinsEl) totalWinsEl.textContent = `${stats.totalWins}`;
+    this.updateArenaPreviewCard();
   }
 
   public showMenuScreen(): void {
@@ -252,6 +417,7 @@ export class UIManager {
     this.pauseModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
     this.eventFeed.innerHTML = '';
+    this.syncMenuControls();
   }
 
   public showHudScreen(): void {
@@ -260,6 +426,7 @@ export class UIManager {
     this.resultsScreen.classList.remove('active');
     this.pauseModal.classList.add('hidden');
     this.settingsModal.classList.add('hidden');
+    this.eventFeed.innerHTML = '';
   }
 
   public setPauseModalVisible(visible: boolean): void {
@@ -277,7 +444,8 @@ export class UIManager {
   public showResultsScreen(
     rankings: ReadonlyArray<PlayerRankingEntry>,
     stats: PlayerStats,
-    isNewBestScore: boolean
+    isNewBestScore: boolean,
+    arenaId: ArenaId = 'classic'
   ): void {
     this.updateCareerStrip(stats);
     this.hudScreen.classList.remove('active');
@@ -286,6 +454,7 @@ export class UIManager {
 
     const playerEntry = rankings.find((r) => r.entityId === PLAYER_ENTITY_ID) ?? rankings[0];
     const rank = playerEntry.rank;
+    const arenaDef = getArenaDefinition(arenaId);
 
     const headlineEl = document.getElementById('results-headline')!;
     const subheadlineEl = document.getElementById('results-subheadline')!;
@@ -295,22 +464,23 @@ export class UIManager {
 
     if (rank === 1) {
       headlineEl.textContent = '1ST PLACE — VICTORY!';
-      subheadlineEl.textContent = 'You ruled the floating arena and outlasted every rival!';
+      subheadlineEl.textContent = `You conquered ${arenaDef.name} and outlasted every rival!`;
     } else if (rank === 2) {
       headlineEl.textContent = '2ND PLACE — RUNNER UP!';
-      subheadlineEl.textContent = 'So close to the crown! One more knockout could seal it.';
+      subheadlineEl.textContent = `Strong showing on ${arenaDef.name}! One more KO could seal it.`;
     } else if (rank === 3) {
       headlineEl.textContent = '3RD PLACE — PODIUM FINISH!';
-      subheadlineEl.textContent = 'Solid arena brawl! Use flank angles to rack up more KOs.';
+      subheadlineEl.textContent = `Solid brawl on ${arenaDef.name}! Use flank angles to rack up more KOs.`;
     } else {
       headlineEl.textContent = `#${rank} PLACE FINISH`;
-      subheadlineEl.textContent = 'Save your boost for edge strikes and emergency recoveries!';
+      subheadlineEl.textContent = `Watch the hazards on ${arenaDef.name} and save boost for recoveries!`;
     }
 
     document.getElementById('res-placement')!.textContent = `#${rank}`;
     document.getElementById('res-score')!.textContent = `${playerEntry.score}`;
     document.getElementById('res-falls')!.textContent = `${playerEntry.falls}`;
-    document.getElementById('res-best')!.textContent = `${stats.bestScore}`;
+    const arenaBest = stats.arenaBestScores?.[arenaId] ?? stats.bestScore;
+    document.getElementById('res-best')!.textContent = `${arenaBest}`;
 
     const tbody = document.getElementById('results-table-body')!;
     tbody.innerHTML = '';
@@ -337,6 +507,10 @@ export class UIManager {
   public updateHud(snapshot: SimulationSnapshot): void {
     const player = snapshot.entities.find((e) => e.id === PLAYER_ENTITY_ID);
     const playerRankEntry = snapshot.rankings.find((r) => r.entityId === PLAYER_ENTITY_ID);
+
+    if (this.hudModeTag && this.hudModeTag.textContent !== snapshot.arena.arenaName) {
+      this.hudModeTag.textContent = snapshot.arena.arenaName;
+    }
 
     if (player && playerRankEntry) {
       this.hudPlayerRank.textContent = `#${playerRankEntry.rank}`;
@@ -415,16 +589,27 @@ export class UIManager {
           this.pushToast('⚡ PERFECT IMPACT! Maximum Knockback!', false);
         }
       } else if (ev.type === 'knockout') {
+        const viaPit = ev.viaHole ? ' into the pit' : '';
         if (ev.attackerId === PLAYER_ENTITY_ID) {
-          this.pushToast(`⚡ YOU knocked out ${ev.victimName}! (+1 SCORE)`, false);
+          this.pushToast(
+            ev.viaHole
+              ? `🕳️ PIT KNOCKOUT! You sent ${ev.victimName} into the abyss! (+1 SCORE)`
+              : `⚡ YOU knocked out ${ev.victimName}! (+1 SCORE)`,
+            false
+          );
         } else if (ev.victimId === PLAYER_ENTITY_ID) {
-          this.pushToast(`💥 Knocked out by ${ev.attackerName}!`, true);
+          this.pushToast(`💥 Knocked${viaPit} by ${ev.attackerName}!`, true);
         } else {
-          this.pushToast(`${ev.attackerName} knocked out ${ev.victimName}`, false);
+          this.pushToast(`${ev.attackerName} knocked ${ev.victimName}${viaPit}`, false);
         }
       } else if (ev.type === 'self_fall') {
         if (ev.victimId === PLAYER_ENTITY_ID) {
-          this.pushToast('⚠ Ring-Out! Watch the arena edge!', true);
+          this.pushToast(
+            ev.viaHole
+              ? '⚠ Pit Fall! Watch the internal hazard holes!'
+              : '⚠ Ring-Out! Watch the arena edge!',
+            true
+          );
         }
       } else if (ev.type === 'shrink_start') {
         this.pushToast('⚠ FINAL 30 SECONDS — ARENA IS SHRINKING!', true);

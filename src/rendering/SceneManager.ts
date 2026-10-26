@@ -46,7 +46,7 @@ export class SceneManager {
     this.dirLight.castShadow = true;
     this.dirLight.shadow.camera.near = 5;
     this.dirLight.shadow.camera.far = 95;
-    const shadowExtent = 26;
+    const shadowExtent = 30;
     this.dirLight.shadow.camera.left = -shadowExtent;
     this.dirLight.shadow.camera.right = shadowExtent;
     this.dirLight.shadow.camera.top = shadowExtent;
@@ -55,12 +55,12 @@ export class SceneManager {
     this.scene.add(this.dirLight);
 
     // Subtle colored rim lights for arcade depth
-    const cyanRimLight = new THREE.PointLight(0x00f0ff, 28, 55, 1.5);
-    cyanRimLight.position.set(-24, 8, -18);
+    const cyanRimLight = new THREE.PointLight(0x00f0ff, 28, 62, 1.5);
+    cyanRimLight.position.set(-26, 9, -20);
     this.scene.add(cyanRimLight);
 
-    const magentaRimLight = new THREE.PointLight(0xff2e93, 24, 55, 1.5);
-    magentaRimLight.position.set(24, 8, 18);
+    const magentaRimLight = new THREE.PointLight(0xff2e93, 24, 62, 1.5);
+    magentaRimLight.position.set(26, 9, 20);
     this.scene.add(magentaRimLight);
 
     this.arenaRenderer = new ArenaRenderer();
@@ -132,12 +132,22 @@ export class SceneManager {
         if (ev.entityAId === PLAYER_ENTITY_ID || ev.entityBId === PLAYER_ENTITY_ID) {
           this.cameraController.addImpactShake(ev.impulse, ev.impactTier);
         }
+      } else if (ev.type === 'bumper_hit') {
+        this.arenaRenderer.triggerBumperPulse(ev.bumperId);
+        this.effectsRenderer.spawnBumperHitEffect(ev.position, ev.direction);
+        if (ev.entityId === PLAYER_ENTITY_ID) {
+          this.cameraController.addImpactShake(15.0, 'heavy');
+        }
       } else if (ev.type === 'boost') {
         const entity = entityMap.get(ev.entityId);
         this.effectsRenderer.spawnBoostBurst(ev.position, entity?.colorPrimary ?? '#00F0FF');
       } else if (ev.type === 'knockout' || ev.type === 'self_fall') {
         const victim = entityMap.get(ev.victimId);
-        this.effectsRenderer.spawnKnockoutSplash(ev.position, victim?.colorPrimary ?? '#FF2E93');
+        this.effectsRenderer.spawnKnockoutSplash(
+          ev.position,
+          victim?.colorPrimary ?? '#FF2E93',
+          ev.viaHole
+        );
       } else if (ev.type === 'respawn') {
         const entity = entityMap.get(ev.entityId);
         this.effectsRenderer.spawnRespawnEffect(ev.position, entity?.colorPrimary ?? '#00F0FF');
@@ -146,12 +156,12 @@ export class SceneManager {
   }
 
   public render(snapshot: SimulationSnapshot, alpha: number, dt: number): void {
-    this.arenaRenderer.update(snapshot.arena, snapshot.elapsedTime);
+    this.arenaRenderer.update(snapshot.arena, snapshot.elapsedTime, snapshot.entities, dt);
     this.ballRenderer.syncEntities(snapshot.entities, alpha, snapshot.elapsedTime);
     this.effectsRenderer.update(snapshot.entities, dt);
 
     const player = snapshot.entities.find((e) => e.id === PLAYER_ENTITY_ID);
-    this.cameraController.update(snapshot.phase, player, dt);
+    this.cameraController.update(snapshot.phase, player, dt, snapshot.arena);
 
     this.renderer.render(this.scene, this.cameraController.camera);
   }

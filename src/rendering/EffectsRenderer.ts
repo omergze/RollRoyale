@@ -236,25 +236,26 @@ export class EffectsRenderer {
     }
   }
 
-  public spawnKnockoutSplash(position: Vector3Like, colorHex: string): void {
-    const count = this.reducedEffects ? 6 : 18;
+  public spawnKnockoutSplash(position: Vector3Like, colorHex: string, viaHole = false): void {
+    const count = this.reducedEffects ? 6 : viaHole ? 24 : 18;
     const color = new THREE.Color(colorHex);
+    const holeAccent = new THREE.Color('#FF2E93');
 
     for (let i = 0; i < count; i++) {
       const spark = this.acquireSpark();
       if (!spark) break;
 
       const angle = (i / count) * Math.PI * 2;
-      const speed = 3.0 + Math.random() * 7.5;
-      const upSpeed = 6.0 + Math.random() * 9.0;
+      const speed = viaHole ? 1.8 + Math.random() * 4.5 : 3.0 + Math.random() * 7.5;
+      const upSpeed = viaHole ? 8.5 + Math.random() * 11.5 : 6.0 + Math.random() * 9.0;
 
       spark.active = true;
       spark.age = 0;
-      spark.lifetime = 0.45 + Math.random() * 0.25;
+      spark.lifetime = (viaHole ? 0.52 : 0.45) + Math.random() * 0.25;
       spark.mesh.visible = true;
-      spark.mesh.position.set(position.x, Math.max(-1.0, position.y), position.z);
-      spark.mesh.scale.setScalar(1.45);
-      spark.mat.color.copy(color);
+      spark.mesh.position.set(position.x, Math.max(-1.2, position.y), position.z);
+      spark.mesh.scale.setScalar(viaHole ? 1.55 : 1.45);
+      spark.mat.color.copy(viaHole && i % 2 === 1 ? holeAccent : color);
       spark.mat.opacity = 1.0;
       spark.velocity.set(Math.cos(angle) * speed, upSpeed, Math.sin(angle) * speed);
     }
@@ -264,13 +265,69 @@ export class EffectsRenderer {
       ring.active = true;
       ring.age = 0;
       ring.lifetime = 0.55;
-      ring.startScale = 1.0;
-      ring.endScale = 5.4;
+      ring.startScale = viaHole ? 0.65 : 1.0;
+      ring.endScale = viaHole ? 4.4 : 5.4;
       ring.mesh.visible = true;
       ring.mesh.position.set(position.x, 0.1, position.z);
       ring.mesh.scale.setScalar(ring.startScale);
       ring.mat.color.copy(color);
       ring.mat.opacity = 0.95;
+    }
+
+    if (viaHole && !this.reducedEffects) {
+      const vortexRing = this.acquireRing();
+      if (vortexRing) {
+        vortexRing.active = true;
+        vortexRing.age = 0;
+        vortexRing.lifetime = 0.42;
+        vortexRing.startScale = 3.2;
+        vortexRing.endScale = 0.45;
+        vortexRing.mesh.visible = true;
+        vortexRing.mesh.position.set(position.x, 0.14, position.z);
+        vortexRing.mesh.scale.setScalar(vortexRing.startScale);
+        vortexRing.mat.color.copy(holeAccent);
+        vortexRing.mat.opacity = 0.92;
+      }
+    }
+  }
+
+  public spawnBumperHitEffect(position: Vector3Like, direction: Vector3Like): void {
+    const count = this.reducedEffects ? 5 : 14;
+    const primaryColor = new THREE.Color('#06D6A0');
+    const accentColor = new THREE.Color('#00F0FF');
+    const baseAngle = Math.atan2(direction.z, direction.x);
+
+    for (let i = 0; i < count; i++) {
+      const spark = this.acquireSpark();
+      if (!spark) break;
+
+      const angle = baseAngle + (Math.random() - 0.5) * 1.35;
+      const speed = 5.0 + Math.random() * 9.5;
+      const upSpeed = 3.2 + Math.random() * 5.0;
+
+      spark.active = true;
+      spark.age = 0;
+      spark.lifetime = 0.26 + Math.random() * 0.16;
+      spark.mesh.visible = true;
+      spark.mesh.position.set(position.x, 0.65, position.z);
+      spark.mesh.scale.setScalar(1.22);
+      spark.mat.color.copy(i % 2 === 0 ? primaryColor : accentColor);
+      spark.mat.opacity = 1.0;
+      spark.velocity.set(Math.cos(angle) * speed, upSpeed, Math.sin(angle) * speed);
+    }
+
+    const ring = this.acquireRing();
+    if (ring) {
+      ring.active = true;
+      ring.age = 0;
+      ring.lifetime = 0.34;
+      ring.startScale = 0.85;
+      ring.endScale = 3.8;
+      ring.mesh.visible = true;
+      ring.mesh.position.set(position.x, 0.12, position.z);
+      ring.mesh.scale.setScalar(ring.startScale);
+      ring.mat.color.copy(primaryColor);
+      ring.mat.opacity = 0.92;
     }
   }
 

@@ -212,6 +212,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   reducedEffects: false,
   difficulty: 'normal',
   botCount: 5,
+  selectedArena: 'classic',
 };
 
 export const DEFAULT_STATS: PlayerStats = {
@@ -222,4 +223,10 @@ export const DEFAULT_STATS: PlayerStats = {
   totalWins: 0,
   normalWins: 0,
   hardWins: 0,
+  arenaBestScores: {
+    classic: 0,
+    crater: 0,
+    donut: 0,
+    bumper: 0,
+  },
 };

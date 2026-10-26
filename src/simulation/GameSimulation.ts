@@ -1,4 +1,5 @@
 import { BotController } from '../ai/BotController';
+import { resolveMapSelection } from '../config/arenas';
 import {
   ARENA_CONSTANTS,
   BOT_PALETTES,
@@ -51,7 +52,7 @@ export class GameSimulation {
 
   constructor() {
     this.physics = new PhysicsWorld(ARENA_CONSTANTS.BASE_RADIUS);
-    this.arena = new ArenaSystem(ARENA_CONSTANTS.BASE_RADIUS, ARENA_CONSTANTS.MIN_RADIUS);
+    this.arena = new ArenaSystem('classic');
     this.collisionSystem = new CollisionSystem();
     this.botController = new BotController();
   }
@@ -69,7 +70,9 @@ export class GameSimulation {
     this.latchedBoostPress = false;
 
     const seed = config.seed ?? 1337 + botCount * 97;
-    this.arena.reset();
+    const resolvedArenaId = resolveMapSelection(config.arenaId ?? 'classic', seed);
+
+    this.arena.setArena(resolvedArenaId);
     this.collisionSystem.reset();
     this.botController.reset(seed);
 
@@ -80,7 +83,12 @@ export class GameSimulation {
     this.entities.clear();
     this.entityList = [];
 
-    this.physics.updateArenaRadius(ARENA_CONSTANTS.BASE_RADIUS);
+    const arenaState = this.arena.getState();
+    this.physics.configureArenaGeometry(
+      arenaState.baseRadius,
+      arenaState.holes,
+      arenaState.bumpers
+    );
 
     const totalParticipants = 1 + botCount;
     const spawnPositions = this.arena.getInitialSpawnPositions(totalParticipants);
@@ -114,6 +122,7 @@ export class GameSimulation {
         boostCooldownTimer: 0,
         boostDirection: vec3(0, 0, -1),
         knockbackTimer: 0,
+        dangerLevel: 0,
         lastHit: null,
         score: 0,
         knockouts: 0,
@@ -226,7 +235,7 @@ export class GameSimulation {
       entity.velocity = this.physics.getBallVelocity(entity.id);
 
       const isGroundedOnDeck =
-        entity.position.y >= -0.25 && !this.arena.isPastPlatformEdge(entity.position);
+        entity.position.y >= -0.22 && !this.arena.isPastPlatformEdge(entity.position);
 
       let inputCmd: PlayerInputCommand;
       if (entity.isPlayer && !this.isDemoMode) {
@@ -256,7 +265,7 @@ export class GameSimulation {
 
     // 2. Step Rapier 3D physics world
     const activeIds = this.entityList.filter((e) => e.isAlive).map((e) => e.id);
-    const contactPairs = this.physics.step(activeIds, PHYSICS_CONSTANTS.BALL_RADIUS);
+    const { ballPairs, bumperHits } = this.physics.step(activeIds, PHYSICS_CONSTANTS.BALL_RADIUS);
 
     // Sync post-step positions and velocities
     for (const entity of this.entityList) {
@@ -265,8 +274,8 @@ export class GameSimulation {
       entity.velocity = this.physics.getBallVelocity(entity.id);
     }
 
-    // 3. Resolve ball-to-ball combat collisions & knockback impulses
-    for (const pair of contactPairs) {
+    // 3a. Resolve ball-to-ball combat collisions & knockback impulses
+    for (const pair of ballPairs) {
       const ballA = this.entities.get(pair.idA);
       const ballB = this.entities.get(pair.idB);
       if (!ballA || !ballB || !ballA.isAlive || !ballB.isAlive) continue;
@@ -284,14 +293,31 @@ export class GameSimulation {
       }
     }
 
-    // 4. Update visual rolling rotation & check for ring-outs (falling off the arena)
+    // 3b. Resolve ball-to-bumper pillar rebounds (Bumper Arena)
+    for (const hit of bumperHits) {
+      const ball = this.entities.get(hit.ballId);
+      if (!ball || !ball.isAlive) continue;
+
+      const res = this.collisionSystem.resolveBumperCollision(ball, hit.bumper, this.elapsedTime);
+      if (res.applied) {
+        ball.velocity = res.velocity;
+        this.physics.setBallVelocity(ball.id, ball.velocity);
+        if (res.event) {
+          this.pendingEvents.push(res.event);
+        }
+      }
+    }
+
+    // 4. Update visual rolling rotation, hazard danger feedback & check for ring-outs (outer edge or holes)
     for (const entity of this.entityList) {
       if (!entity.isAlive) continue;
 
       MovementController.updateRollingRotation(entity);
+      entity.dangerLevel = this.arena.getHazardDangerLevel(entity.position);
 
-      if (this.arena.isEntityOutOfBounds(entity.position)) {
-        this.eliminateEntity(entity);
+      const boundsCheck = this.arena.checkOutOfBounds(entity.position);
+      if (boundsCheck.out) {
+        this.eliminateEntity(entity, boundsCheck.viaHole);
       }
     }
 
@@ -307,16 +333,17 @@ export class GameSimulation {
     }
   }
 
-  private eliminateEntity(entity: BallEntityState): void {
+  private eliminateEntity(entity: BallEntityState, viaHole = false): void {
     const fallPosition = cloneVec3(entity.position);
     entity.isAlive = false;
     entity.respawnTimer = ARENA_CONSTANTS.RESPAWN_DELAY_SECONDS;
     entity.boostActiveTimer = 0;
     entity.spawnProtectionTimer = 0;
     entity.knockbackTimer = 0;
+    entity.dangerLevel = 0;
     entity.velocity = vec3(0, 0, 0);
 
-    const event = ScoringSystem.processRingOut(entity, this.entities, this.elapsedTime);
+    const event = ScoringSystem.processRingOut(entity, this.entities, this.elapsedTime, viaHole);
     event.position = fallPosition;
     this.pendingEvents.push(event);
 
@@ -334,6 +361,7 @@ export class GameSimulation {
     entity.spawnProtectionTimer = ARENA_CONSTANTS.SPAWN_PROTECTION_SECONDS;
     entity.boostActiveTimer = 0;
     entity.knockbackTimer = 0;
+    entity.dangerLevel = 0;
     entity.lastHit = null;
     entity.position = cloneVec3(safePos);
     entity.prevPosition = cloneVec3(safePos);
