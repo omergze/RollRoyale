@@ -63,3 +63,13 @@ npm run test:e2e
 3. Starts Solo Matches across **Classic Arena**, **Crater Arena**, **Bumper Arena**, and **Donut Arena**, verifying `#hud-mode-tag`, movement, boost, and capturing screenshots of each arena.
 4. Drives into the central hole on **Donut Arena** and verifies the ball physically falls through (`falls >= 1`) and respawns safely on the ring track.
 5. Tests Pause (`Escape`), Match Restart, Match Completion, Results Screen, and **Tablet (iPad `820x1180`)** / **Mobile (`390x844`)** touch controls.
+
+---
+
+## Online server and two-client verification
+
+Install backend dependencies with `npm ci --prefix server --legacy-peer-deps`, then run `npm test --prefix server`, `npm run typecheck --prefix server`, and `npm run build --prefix server`. The server tests cover command and nickname rejection, four human-only Rapier arenas, boost cooldown, physical hole/edge knockout attribution, safe respawn, actual two-client room creation/join/movement/synchronized snapshots, host map permission, ready gate, eight-player capacity, match results/rematch lobby, and a dropped client's reconnection into its original session.
+
+To check the browser flow, run the backend and Vite server, then open two independent browsers. Create a private room in browser A, join with the code in B, ready both, select Crater, start, and confirm both see the same players, map, timer and movement. Repeat on Classic, Donut and Bumper, including boost and falls. Test desktop, iPad and mobile layouts. WebGL browser tests can use system Chromium when the Playwright-managed download host is blocked in Codex Cloud; disclose which browser was used.
+
+The online implementation has been exercised with two independent Colyseus network clients and two separate Chromium browser pages in this cloud environment. The two-client server run produced synchronized Crater snapshots; a separate Classic run observed server-emitted `perfect_boost` and `heavy` collision events. The browser run verified room creation, code join, readiness, shared Crater arena and tablet touch controls. The automated suite exercises all four map physics and shortened server-driven rematches. It does not establish real Internet performance or public cross-device availability. Production requires a deployed backend and tests from independent networks/devices.

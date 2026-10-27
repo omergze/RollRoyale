@@ -8,6 +8,7 @@ import { CameraController } from './CameraController';
 import { EffectsRenderer } from './EffectsRenderer';
 
 export class SceneManager {
+  private localPlayerId = PLAYER_ENTITY_ID;
   private container: HTMLElement;
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
@@ -129,13 +130,13 @@ export class SceneManager {
           ev.knockbackDirection,
           ev.isPerfectImpact
         );
-        if (ev.entityAId === PLAYER_ENTITY_ID || ev.entityBId === PLAYER_ENTITY_ID) {
+        if (ev.entityAId === this.localPlayerId || ev.entityBId === this.localPlayerId) {
           this.cameraController.addImpactShake(ev.impulse, ev.impactTier);
         }
       } else if (ev.type === 'bumper_hit') {
         this.arenaRenderer.triggerBumperPulse(ev.bumperId);
         this.effectsRenderer.spawnBumperHitEffect(ev.position, ev.direction);
-        if (ev.entityId === PLAYER_ENTITY_ID) {
+        if (ev.entityId === this.localPlayerId) {
           this.cameraController.addImpactShake(15.0, 'heavy');
         }
       } else if (ev.type === 'boost') {
@@ -160,9 +161,11 @@ export class SceneManager {
     this.ballRenderer.syncEntities(snapshot.entities, alpha, snapshot.elapsedTime);
     this.effectsRenderer.update(snapshot.entities, dt);
 
-    const player = snapshot.entities.find((e) => e.id === PLAYER_ENTITY_ID);
+    const player = snapshot.entities.find((e) => e.id === this.localPlayerId);
     this.cameraController.update(snapshot.phase, player, dt, snapshot.arena);
 
     this.renderer.render(this.scene, this.cameraController.camera);
   }
+
+  public setLocalPlayerId(id: string): void { this.localPlayerId = id; }
 }

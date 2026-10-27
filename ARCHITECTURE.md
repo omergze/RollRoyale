@@ -65,17 +65,16 @@ RollRoyale is designed around a strict separation between **input commands**, **
 
 ---
 
-## 3. Future Server-Authoritative Multiplayer Architecture (Node.js + Colyseus)
+## 3. Online multiplayer architecture (implemented)
 
-Because `GameSimulation` has zero browser DOM or Three.js dependencies and communicates exclusively through serializable `PlayerInputCommand` and `SimulationSnapshot` structures, transitioning to real-time WebSocket multiplayer requires no rewrite of the simulation or rendering layers:
+Solo mode still runs `LocalLoopbackAdapter` and its own `GameSimulation` entirely in the browser. It never needs a server. `OnlineMode` is a separate Colyseus client path. It connects only after Online Play is selected and renders server snapshots through the existing `SceneManager`.
 
-1. **Authoritative Server Room (`Colyseus`)**:
-   - A Node.js server imports `GameSimulation` and `@dimforge/rapier3d-compat`.
-   - Each match room runs `simulation.stepFixed(1 / 60)` on a server timer.
-   - Connected clients send `{ sequence, moveX, moveZ, boostPressed }` input messages; unfilled slots are driven by `BotController`.
-2. **Client-Side Prediction & Reconciliation**:
-   - Implement `ColyseusNetworkAdapter` conforming to `INetworkAdapter`.
-   - The client immediately applies local inputs to a predicted local state buffer while tagging each input with a monotonically increasing `sequence` number.
-   - When an authoritative `SimulationSnapshot` arrives from the server, the client reconciles its position/velocity and replays unacknowledged inputs where `sequence > lastAckedSequence`.
-3. **Remote Entity Interpolation**:
-   - Remote balls are rendered using a 100ms interpolation buffer (`lerpVec3` and `slerpQuat` between the two most recent authoritative server snapshots) to guarantee smooth 60fps visuals even under network jitter.
+`server/src/OnlineRoom.ts` owns one authoritative `GameSimulation` per private room. It accepts 2–8 human participants, never backfills with bots, and runs `stepFixed(1/60)` on the server. The simulation uses the same Rapier world, movement, Perfect Impact, collision, scoring, arena hazard, shrinking, and respawn code as solo. Clients submit only movement, boost, sequence, and send time; the room validates sequence and vector bounds and limits accepted input to roughly 83 messages per second. Colyseus WebSocket messages carry reliable collision/knockout/match events. Snapshots are sent every third physics step (nominally 20 Hz), with an extra snapshot on events.
+
+A six-character code maps to a live room ID in server memory. `/rooms/:code` resolves the code; `/health` reports room count, RSS memory, last step duration, and approximate snapshot JSON size. One process owns all rooms. Codes and rooms do not survive a server restart; no database or Redis is required. Host changes are broadcast when the old host leaves. A dropped player has 15 seconds to reconnect with the Colyseus reconnection token; their ball is inactive during the gap, then safely respawns with the same score/session. Permanent leavers are removed from the simulation. If fewer than two connected players remain, the match ends.
+
+The client tracks input sequence acknowledgements but does not replay Rapier inputs. Rapier is not deterministic across browser/server environments. Instead it extrapolates the local ball from the last authoritative velocity for at most 50 ms, blends toward each new server state, and snaps only after a large correction. Remote balls interpolate between two 20 Hz snapshots. This is bounded visual prediction; the server always decides physics and scoring. Higher latency and jitter require more tuning and testing on deployed infrastructure.
+
+Protocol messages: `ready:boolean`, `map:ArenaId|random` (host only), `start` (host only), `input:{sequence,moveX,moveZ,boostPressed,sentAt}`, `ping:number`, `sync`; server replies with `welcome`, `lobby`, `countdown`, `started`, `snapshot:{snapshot,acks}`, `events`, `pong`, and `error`. The server alone resolves Random Map. Results are followed by the same lobby after eight seconds, with ready flags cleared.
+
+The frontend is still a Vite static build suitable for Cloudflare Workers Static Assets. The backend is a separate Node.js/WebSocket service. Set `VITE_MULTIPLAYER_URL` to the backend HTTPS origin before the frontend build; the SDK uses WSS for WebSockets. Development defaults to the Vite host on port 2567. No production URL is committed.

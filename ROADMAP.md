@@ -35,18 +35,16 @@ All items below are implemented, tested, and verified:
 
 ---
 
-## Milestone 2 — Real-Time Multiplayer (Planned — Not Yet Implemented)
+## Milestone 2 — Private online multiplayer (implemented, not deployed)
 
-> **Note:** Online multiplayer is **not** implemented in Milestone 1. The codebase is architected via `PlayerInputCommand`, headless `GameSimulation`, and `INetworkAdapter` so multiplayer can be added without rewriting core game logic.
-
-- [ ] **Authoritative Multiplayer Server (Node.js + Colyseus)**
-  - Run `GameSimulation` on a Node.js Colyseus room instance at 60Hz (or 30Hz tick / 20Hz snapshot broadcast) for 2–8 human players + backfill bots.
-- [ ] **WebSocket Client Adapter (`ColyseusNetworkAdapter`)**
-  - Implement `INetworkAdapter` to transmit sequenced `PlayerInputCommand` packets and receive authoritative `SimulationSnapshot` frames.
-- [ ] **Client-Side Prediction & Snapshot Interpolation**
-  - Local input prediction with server state reconciliation for the local player ball and buffered entity interpolation for remote players.
-- [ ] **Room Codes & Quick Play Lobby**
-  - Simple room creation and invite links for playing with friends on desktop and iPad.
+- [x] Separate human-only Colyseus room server and guest nicknames.
+- [x] Six-character room codes, host map control, ready gate, synchronized countdown, 2–8 seats, and host transfer.
+- [x] Server-authoritative shared Rapier simulation, four arenas, 120-second timer, boost, five impact tiers, knockouts, respawns, and rankings.
+- [x] Browser client rendering shared snapshots, touch controls, ping display, leave flow, rematch lobby, and 15-second reconnect grace.
+- [x] Real two-client WebSocket and browser smoke verification in Codex Cloud.
+- [ ] Deploy a real European backend and verify from separate physical devices over the Internet.
+- [ ] Tune smoothing and collision feel under realistic latency/jitter and complete sustained 8-player load measurements.
+- [ ] Add full browser automation for disconnect/reconnect, mobile controls, all arena hazards and complete 120-second matches.
 
 ---
 

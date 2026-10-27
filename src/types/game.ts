@@ -201,6 +201,8 @@ export interface MatchConfig {
   matchDuration?: number;
   isDemoMode?: boolean;
   seed?: number;
+  /** Human participants are supplied only by the authoritative online room. */
+  humanPlayers?: Array<{ id: string; name: string; colorPrimary: string; colorAccent: string }>;
 }
 
 export interface GameSettings {

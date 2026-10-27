@@ -26,6 +26,8 @@ export interface UIActions {
 }
 
 export class UIManager {
+  private localPlayerId = PLAYER_ENTITY_ID;
+  public setLocalPlayerId(id: string): void { this.localPlayerId = id; }
   private settings: GameSettings;
   private stats: PlayerStats;
   private actions: UIActions;
@@ -505,8 +507,8 @@ export class UIManager {
   }
 
   public updateHud(snapshot: SimulationSnapshot): void {
-    const player = snapshot.entities.find((e) => e.id === PLAYER_ENTITY_ID);
-    const playerRankEntry = snapshot.rankings.find((r) => r.entityId === PLAYER_ENTITY_ID);
+    const player = snapshot.entities.find((e) => e.id === this.localPlayerId);
+    const playerRankEntry = snapshot.rankings.find((r) => r.entityId === this.localPlayerId);
 
     if (this.hudModeTag && this.hudModeTag.textContent !== snapshot.arena.arenaName) {
       this.hudModeTag.textContent = snapshot.arena.arenaName;
@@ -562,7 +564,7 @@ export class UIManager {
 
     // Compact Live Leaderboard (top 4 + ensure player is visible)
     const topRows = snapshot.rankings.slice(0, 4);
-    if (playerRankEntry && !topRows.some((r) => r.entityId === PLAYER_ENTITY_ID)) {
+    if (playerRankEntry && !topRows.some((r) => r.entityId === this.localPlayerId)) {
       topRows[topRows.length - 1] = playerRankEntry;
     }
 
@@ -573,7 +575,7 @@ export class UIManager {
           <div class="lb-left">
             <span>#${r.rank}</span>
             <span class="lb-dot" style="background:${r.colorPrimary}"></span>
-            <span>${r.name}</span>
+          <span>${r.name.replace(/[&<>"']/g, '')}</span>
           </div>
           <span>${r.score}</span>
         </div>
