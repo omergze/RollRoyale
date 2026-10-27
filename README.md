@@ -65,6 +65,27 @@ Preview the production build locally:
 npm run preview
 ```
 
+### Cloudflare Workers static-assets deployment
+
+The production bundle is deployed as a static-assets-only Worker. The explicit
+[`wrangler.jsonc`](wrangler.jsonc) config points Wrangler at `./dist`, so it
+does not invoke Vite framework auto-configuration (which requires Vite 6 or
+newer). Vite 5 remains supported.
+
+In the Cloudflare Worker Git integration, use the repository root as the root
+directory, `npm run build` as the build command, and the following deploy
+command:
+
+```bash
+npx wrangler deploy --config wrangler.jsonc
+```
+
+For a local authenticated deployment, run `npm run build` first and then:
+
+```bash
+npm run deploy:cloudflare
+```
+
 ---
 
 ## Testing
