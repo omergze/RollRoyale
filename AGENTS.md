@@ -55,5 +55,11 @@ npm run test:e2e
 ### What to Build Next (Milestone 3 / Polish)
 1. **Solo Challenge Modes**:
    - Add an optional mode selector on the Main Menu for **Survival Rush** (endless waves of bots where 1 fall = game over) or **Target Blitz** (first to 10 Knockouts wins).
-2. **Colyseus Authoritative Multiplayer Prototype**:
-   - Create a `server/` workspace using Node.js + `colyseus` that hosts `GameSimulation` and implements a `ColyseusNetworkAdapter` client in `src/network/`.
+2. **Online multiplayer follow-up**:
+   - Validate the private-room backend on European hosting with real devices. Tune latency behavior and expand long-running browser tests. See ARCHITECTURE.md and TESTING.md.
+
+## Online development handover
+
+The server package is independent: `npm ci --prefix server --legacy-peer-deps`, `npm run dev --prefix server`, `npm test --prefix server`, `npm run build --prefix server`. The browser uses `@colyseus/sdk` 0.18 with Colyseus server 0.18. Keep versions compatible. In local Vite development the browser reaches the backend at the same hostname on port 2567. Production requires `VITE_MULTIPLAYER_URL` at build time; do not hardcode a URL or put secrets in `VITE_` variables. Solo Play must remain independent of backend availability.
+
+`GameSimulation.startMatch({ humanPlayers })` is the server path. Do not feed bots into online rooms. Do not move scoring or hit detection to clients. The server validates client commands and runs Rapier; the browser only extrapolates visuals for up to 50 ms. See `server/src/OnlineRoom.ts` for room messages, reconnect grace, and snapshot rate. New gameplay balance changes must be checked in both solo and server simulation tests.

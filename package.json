@@ -11,9 +11,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dev:server": "npm run dev --prefix server",
+    "build:server": "npm run build --prefix server",
+    "test:server": "npm test --prefix server"
   },
   "dependencies": {
+    "@colyseus/sdk": "^0.18.8",
     "@dimforge/rapier3d-compat": "^0.14.0",
     "three": "^0.170.0"
   },

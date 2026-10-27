@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "outDir": "dist",
+    "rootDir": "..",
+    "noUncheckedIndexedAccess": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../src/simulation/**/*.ts",
+    "../src/physics/**/*.ts",
+    "../src/ai/**/*.ts",
+    "../src/config/**/*.ts",
+    "../src/types/**/*.ts",
+    "../src/utils/**/*.ts"
+  ]
+}

@@ -1,6 +1,7 @@
 import { SoundManager } from './audio/SoundManager';
 import { InputManager } from './input/InputManager';
 import { LocalLoopbackAdapter } from './network/NetworkAdapter';
+import { OnlineMode } from './network/OnlineMode';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { SceneManager } from './rendering/SceneManager';
 import { GameSimulation, PLAYER_ENTITY_ID } from './simulation/GameSimulation';
@@ -16,6 +17,7 @@ class RollRoyaleApp {
   private networkAdapter!: LocalLoopbackAdapter;
   private sceneManager!: SceneManager;
   private uiManager!: UIManager;
+  private onlineMode!: OnlineMode;
   private lastFrameTime = 0;
 
   constructor() {
@@ -48,6 +50,11 @@ class RollRoyaleApp {
       onArenaSelectionChanged: (selection) => this.previewArenaOnMenu(selection),
       onButtonClickSound: () => this.soundManager.playClick(),
     });
+    this.onlineMode = new OnlineMode(
+      (id) => { this.sceneManager.setLocalPlayerId(id); this.uiManager.setLocalPlayerId(id); },
+      () => { this.sceneManager.setLocalPlayerId(PLAYER_ENTITY_ID); this.uiManager.setLocalPlayerId(PLAYER_ENTITY_ID); this.returnToMenu(); }
+    );
+    document.getElementById('btn-play-online')?.addEventListener('click', () => this.onlineMode.open());
 
     // Bind touchscreen virtual joystick and boost button
     const joystickZone = document.getElementById('joystick-zone')!;
@@ -129,6 +136,21 @@ class RollRoyaleApp {
     const dt = Math.min(0.1, Math.max(0.001, (now - this.lastFrameTime) / 1000));
     this.lastFrameTime = now;
 
+    if (this.onlineMode.active) {
+      const cmd = this.onlineMode.playing ? this.inputManager.getPlayerInputCommand() : undefined;
+      const online = this.onlineMode.update(now, cmd);
+      if (online.snapshot) {
+        this.sceneManager.processEvents(online.events, online.snapshot);
+        this.processOnlineEvents(online.events);
+        if (online.snapshot.phase === 'playing') this.uiManager.updateHud(online.snapshot);
+        this.sceneManager.render(online.snapshot, online.alpha, dt);
+      } else {
+        const demo = this.networkAdapter.update(dt);
+        this.sceneManager.render(demo.snapshot, demo.alpha, dt);
+      }
+      requestAnimationFrame((nextNow) => this.frameLoop(nextNow));
+      return;
+    }
     const currentPhase = this.simulation.getPhase();
     if (currentPhase === 'playing') {
       const cmd = this.inputManager.getPlayerInputCommand();
@@ -184,6 +206,26 @@ class RollRoyaleApp {
           activeArenaId
         );
         this.uiManager.showResultsScreen(ev.rankings, stats, isNewBestScore, activeArenaId);
+      }
+    }
+  }
+
+  private processOnlineEvents(events: ReadonlyArray<GameEvent>): void {
+    this.uiManager.handleGameEvents(events);
+    const localId = this.onlineMode.localPlayerId;
+    for (const event of events) {
+      if (event.type === 'collision') {
+        this.soundManager.playCollision(event.relativeSpeed, event.isBoostedImpact, event.impactTier);
+      } else if (event.type === 'bumper_hit') {
+        this.soundManager.playBumperHit(event.entityId === localId);
+      } else if (event.type === 'boost') {
+        this.soundManager.playBoost(event.entityId === localId);
+      } else if (event.type === 'knockout') {
+        this.soundManager.playKnockout(event.attackerId === localId);
+      } else if (event.type === 'self_fall') {
+        this.soundManager.playSelfFall(event.victimId === localId);
+      } else if (event.type === 'shrink_start') {
+        this.soundManager.playShrinkWarning();
       }
     }
   }

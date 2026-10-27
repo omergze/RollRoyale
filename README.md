@@ -93,6 +93,27 @@ npm run test:e2e
 
 ---
 
+## Private online play
+
+Online Play is a separate human-only mode. Create a room, share its six-character code, have 2–8 people join and ready up, then let the host select a map and start. The server runs the original Rapier game physics and broadcasts the shared match. Solo Play remains fully offline, including its AI bots and all maps.
+
+Start the dedicated backend and Vite frontend in separate processes:
+
+```bash
+npm ci
+npm ci --prefix server --legacy-peer-deps
+npm run dev --prefix server
+npm run dev
+```
+
+The frontend uses port 5173 and the backend uses port 2567 by default. Open the frontend in two independent browsers, create a room in one, and join by code in the other. `GET /health` on the backend reports its status. `npm test --prefix server` runs authoritative simulation and real WebSocket integration tests. `npm run build --prefix server` builds a standalone server bundle, and `npm run start --prefix server` runs it.
+
+For production, deploy the static Vite build to Cloudflare Workers Static Assets and the backend to a separate WebSocket-capable Node.js host, ideally in Europe. Set `VITE_MULTIPLAYER_URL` to that backend's **HTTPS origin** before building the frontend; the SDK uses WSS automatically. Set `FRONTEND_ORIGIN` on the backend to the frontend's origin and `PORT` as required by the host. See `.env.example` and `server/Dockerfile`. No backend is deployed or configured in this repository; public cross-device play requires one. Room membership is in memory and does not survive a backend restart.
+
+The client currently uses bounded visual velocity extrapolation and remote interpolation. Full Rapier replay prediction is intentionally absent because the browser and Node.js may not be deterministic. Real-world latency, jitter and eight-player sustained load still need deployment testing.
+
+---
+
 ## Controls
 
 ### Desktop Controls

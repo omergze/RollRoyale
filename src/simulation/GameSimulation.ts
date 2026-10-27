@@ -40,6 +40,8 @@ export class GameSimulation {
     boostPressed: false,
   };
   private latchedBoostPress = false;
+  private humanInputs = new Map<string, PlayerInputCommand>();
+  private humanBoosts = new Set<string>();
 
   private phase: MatchPhase = 'menu';
   private isDemoMode = true;
@@ -58,7 +60,8 @@ export class GameSimulation {
   }
 
   public startMatch(config: MatchConfig): void {
-    const botCount = Math.max(1, Math.min(7, Math.round(config.botCount)));
+    const humanPlayers = config.humanPlayers;
+    const botCount = humanPlayers ? 0 : Math.max(1, Math.min(7, Math.round(config.botCount)));
     const difficulty: BotDifficulty = config.difficulty;
     this.isDemoMode = Boolean(config.isDemoMode);
     this.matchDuration = config.matchDuration ?? ARENA_CONSTANTS.MATCH_DURATION_SECONDS;
@@ -68,6 +71,8 @@ export class GameSimulation {
     this.accumulator = 0;
     this.pendingEvents = [];
     this.latchedBoostPress = false;
+    this.humanInputs.clear();
+    this.humanBoosts.clear();
 
     const seed = config.seed ?? 1337 + botCount * 97;
     const resolvedArenaId = resolveMapSelection(config.arenaId ?? 'classic', seed);
@@ -90,22 +95,23 @@ export class GameSimulation {
       arenaState.bumpers
     );
 
-    const totalParticipants = 1 + botCount;
+    const totalParticipants = (humanPlayers?.length ?? 1) + botCount;
     const spawnPositions = this.arena.getInitialSpawnPositions(totalParticipants);
 
     for (let i = 0; i < totalParticipants; i++) {
-      const isPlayer = i === 0;
-      const id = isPlayer ? PLAYER_ENTITY_ID : `bot-${i}`;
+      const isPlayer = humanPlayers ? true : i === 0;
+      const id = humanPlayers ? humanPlayers[i].id : isPlayer ? PLAYER_ENTITY_ID : `bot-${i}`;
       const palette = isPlayer ? PLAYER_PALETTE : BOT_PALETTES[(i - 1) % BOT_PALETTES.length];
+      const human = humanPlayers?.[i];
       const spawnPos = spawnPositions[i];
 
       const entity: BallEntityState = {
         id,
-        name: palette.name,
+        name: human?.name ?? palette.name,
         isPlayer,
         difficulty,
-        colorPrimary: palette.primary,
-        colorAccent: palette.accent,
+        colorPrimary: human?.colorPrimary ?? palette.primary,
+        colorAccent: human?.colorAccent ?? palette.accent,
         slotIndex: i,
         radius: PHYSICS_CONSTANTS.BALL_RADIUS,
         mass: PHYSICS_CONSTANTS.BALL_MASS,
@@ -136,6 +142,9 @@ export class GameSimulation {
       this.entities.set(id, entity);
       this.entityList.push(entity);
       this.physics.addBallBody(id, spawnPos, entity.radius, entity.mass);
+      if (human) {
+        this.humanInputs.set(id, { entityId: id, moveX: 0, moveZ: 0, boostPressed: false });
+      }
     }
 
     this.phase = this.isDemoMode ? 'menu' : 'playing';
@@ -146,6 +155,41 @@ export class GameSimulation {
     if (input.boostPressed) {
       this.latchedBoostPress = true;
     }
+  }
+
+  public setHumanInput(input: PlayerInputCommand): void {
+    if (!this.entities.has(input.entityId)) return;
+    this.humanInputs.set(input.entityId, { ...input });
+    if (input.boostPressed) this.humanBoosts.add(input.entityId);
+  }
+
+  /** Freeze a dropped human during the reconnection grace period. */
+  public setHumanConnected(id: string, connected: boolean): void {
+    const entity = this.entities.get(id);
+    if (!entity || !this.humanInputs.has(id)) return;
+    this.setHumanInput({ entityId: id, moveX: 0, moveZ: 0, boostPressed: false });
+    if (!connected && entity.isAlive) {
+      entity.isAlive = false;
+      entity.respawnTimer = 1_000_000;
+      this.physics.setBallActive(id, false);
+    } else if (connected && !entity.isAlive) {
+      this.respawnEntity(entity);
+    }
+  }
+
+  public removeHuman(id: string): void {
+    if (!this.humanInputs.has(id)) return;
+    this.physics.removeBallBody(id);
+    this.entities.delete(id);
+    this.entityList = this.entityList.filter((entity) => entity.id !== id);
+    this.humanInputs.delete(id);
+    this.humanBoosts.delete(id);
+  }
+
+  public finishMatch(): void {
+    if (this.phase !== 'playing') return;
+    this.phase = 'results';
+    this.pendingEvents.push({ type: 'match_end', timestamp: this.elapsedTime, rankings: this.getRankings() });
   }
 
   public setPaused(paused: boolean): void {
@@ -238,7 +282,11 @@ export class GameSimulation {
         entity.position.y >= -0.22 && !this.arena.isPastPlatformEdge(entity.position);
 
       let inputCmd: PlayerInputCommand;
-      if (entity.isPlayer && !this.isDemoMode) {
+      if (this.humanInputs.has(entity.id)) {
+        const humanInput = this.humanInputs.get(entity.id)!;
+        inputCmd = { ...humanInput, boostPressed: humanInput.boostPressed || this.humanBoosts.has(entity.id) };
+        this.humanBoosts.delete(entity.id);
+      } else if (entity.isPlayer && !this.isDemoMode) {
         inputCmd = {
           ...this.playerInput,
           boostPressed: this.playerInput.boostPressed || this.latchedBoostPress,
@@ -323,13 +371,7 @@ export class GameSimulation {
 
     // 5. Check match timer completion
     if (!this.isDemoMode && this.remainingTime <= 0 && this.phase === 'playing') {
-      this.phase = 'results';
-      const rankings = ScoringSystem.computeRankings(this.entityList);
-      this.pendingEvents.push({
-        type: 'match_end',
-        timestamp: this.elapsedTime,
-        rankings,
-      });
+      this.finishMatch();
     }
   }
 
