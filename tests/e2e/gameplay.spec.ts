@@ -1,12 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-const ARTIFACT_DIR =
-  '/Users/omerfarukgoze/.gemini/antigravity/brain/6e8aca71-720a-4818-bdeb-51fea9afad05';
-
 test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
   test('Desktop: Arena Selection (Classic, Crater, Donut, Bumper, Random), Hole Fall & Respawn, Combat, and Results', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -36,7 +33,7 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
     // Let background 3D Crater Arena demo run a moment, then capture Main Menu screenshot
     await page.waitForTimeout(500);
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_main_menu.png`,
+      path: testInfo.outputPath('rollroyale_main_menu.png'),
     });
 
     // Test Random & Donut & Bumper selection on Menu
@@ -88,7 +85,7 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
     expect(movedPlayer.boostCooldownTimer).toBeGreaterThan(0);
 
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_arena_classic.png`,
+      path: testInfo.outputPath('rollroyale_arena_classic.png'),
     });
 
     // 2. Start Solo Match on CRATER ARENA (3 physical internal holes)
@@ -107,10 +104,10 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
     expect(craterSnap.arena.holes.length).toBe(3);
 
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_arena_crater.png`,
+      path: testInfo.outputPath('rollroyale_arena_crater.png'),
     });
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_gameplay_desktop.png`,
+      path: testInfo.outputPath('rollroyale_gameplay_desktop.png'),
     });
 
     // 3. Start Solo Match on BUMPER ARENA (4 physical kinetic bumper pillars)
@@ -131,7 +128,7 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
     expect(bumperSnap.arena.bumpers.length).toBe(4);
 
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_arena_bumper.png`,
+      path: testInfo.outputPath('rollroyale_arena_bumper.png'),
     });
 
     // 4. Start Solo Match on DONUT ARENA & verify physical central hole fall + respawn!
@@ -145,7 +142,7 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
 
     await page.waitForTimeout(450);
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_arena_donut.png`,
+      path: testInfo.outputPath('rollroyale_arena_donut.png'),
     });
 
     // Drive straight forward (-Z) from bottom spawn (0, 14.2) into the central hole (0, 0)
@@ -183,7 +180,7 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
 
     await expect(page.locator('#results-screen')).toHaveClass(/active/);
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_results_screen.png`,
+      path: testInfo.outputPath('rollroyale_results_screen.png'),
     });
 
     // Click Play Again from Results Screen
@@ -195,7 +192,7 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
 
   test('Tablet (iPad) & Mobile Viewports: Touch Joystick & Boost Controls on Donut Arena', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -231,14 +228,14 @@ test.describe('RollRoyale Real Browser Multi-Arena E2E Verification', () => {
     }
 
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_tablet_ipad.png`,
+      path: testInfo.outputPath('rollroyale_tablet_ipad.png'),
     });
 
     // 2. Mobile Phone Viewport (390x844)
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     await page.screenshot({
-      path: `${ARTIFACT_DIR}/rollroyale_mobile_phone.png`,
+      path: testInfo.outputPath('rollroyale_mobile_phone.png'),
     });
 
     expect(consoleErrors).toEqual([]);
